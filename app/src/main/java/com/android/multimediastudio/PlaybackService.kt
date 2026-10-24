@@ -121,7 +121,7 @@ class PlaybackService : MediaSessionService() {
                     } catch (_: Exception) {}
 
                     val renderersFactory = DefaultRenderersFactory(context.applicationContext)
-                        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+                        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
                     val newPlayer = ExoPlayer.Builder(context.applicationContext)
                         .setRenderersFactory(renderersFactory)

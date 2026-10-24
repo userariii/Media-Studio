@@ -250,7 +250,7 @@ class PlayerViewModel(
             PlaybackService.getSharedPlayer(context)
         } catch (_: Exception) {
             val renderersFactory = DefaultRenderersFactory(context.applicationContext)
-                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
             ExoPlayer.Builder(context.applicationContext)
                 .setRenderersFactory(renderersFactory)
