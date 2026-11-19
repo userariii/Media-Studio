@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.geometry.Offset
@@ -43,7 +44,6 @@ import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -323,6 +323,13 @@ fun VideoPlayerContent(
     }
 
     val isPortraitVideo = isPortraitFromMetadata || (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f && effectiveVideoHeight > effectiveVideoWidth)
+
+    val videoAspect = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
+        val raw = effectiveVideoWidth / effectiveVideoHeight
+        if (isPortraitVideo) raw.coerceIn(0.45f, 0.8f) else raw.coerceIn(1.2f, 2.5f)
+    } else {
+        if (isPortraitVideo) 9f / 16f else 16f / 9f
+    }
 
     if (uiState.isLandscape) {
         // LANDSCAPE MODE (Full screen video)
@@ -916,51 +923,198 @@ fun VideoPlayerContent(
             }
         }
     } else {
-        // PORTRAIT MODE
+        // FULLSCREEN PORTRAIT MODE (100% Screen Video Surface + Overlaid Tap-to-Show Controls)
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .onSizeChanged { containerHeight = it.height.toFloat() }
+                .onSizeChanged {
+                    overlayWidth = it.width
+                    overlaySize = it
+                    containerHeight = it.height.toFloat()
+                }
                 .graphicsLayer {
                     translationY = offsetY.value
                 }
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surfaceContainerHighest,
-                            MaterialTheme.colorScheme.surface,
-                        ),
-                    ),
-                )
+                .background(Color.Black)
                 .pointerInput(uiState.isScreenLocked) {
                     if (uiState.isScreenLocked) return@pointerInput
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        var isHolding = false
+                        var savedSpeed = currentPlaybackSpeed
+
+                        val holdJob = coroutineScope.launch {
+                            delay(400)
+                            savedSpeed = currentPlaybackSpeed
+                            isHolding = true
+                            currentOnSpeedSelected(2.0f)
+                            isSpeedBoostActive = true
+                            try {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            } catch (_: Exception) {
+                            }
+                        }
+
+                        try {
+                            val touchSlop = viewConfiguration.touchSlop
+                            var totalPan = Offset.Zero
+
+                            do {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                val panChange = event.calculatePan()
+                                totalPan += panChange
+
+                                if (!isHolding && (totalPan.getDistance() > touchSlop || event.changes.size > 1)) {
+                                    holdJob.cancel()
+                                }
+                            } while (event.changes.any { it.pressed })
+                        } finally {
+                            holdJob.cancel()
+                            if (isHolding) {
+                                isSpeedBoostActive = false
+                                currentOnSpeedSelected(savedSpeed)
+                                try {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                } catch (_: Exception) {
+                                }
+                            }
+                        }
+                    }
+                }
+                .pointerInput(uiState.isScreenLocked) {
+                    detectTapGestures(
+                        onTap = {
+                            onOverlayClick()
+                        },
+                        onDoubleTap = { offset ->
+                            if (uiState.isScreenLocked) return@detectTapGestures
+                            val width = if (overlayWidth > 0) overlayWidth else size.width
+                            val isLeft = offset.x < width / 2f
+                            if (isLeft) {
+                                externalSeekSide = SeekSide.LEFT
+                                externalSeekTrigger = System.currentTimeMillis()
+                            } else {
+                                externalSeekSide = SeekSide.RIGHT
+                                externalSeekTrigger = System.currentTimeMillis()
+                            }
+                        }
+                    )
+                }
+                .pointerInput(uiState.isScreenLocked) {
+                    if (uiState.isScreenLocked) return@pointerInput
+                    var isSwipeToMinimize = false
+                    var isDraggingLeft = false
+                    var isDraggingRight = false
+
                     detectVerticalDragGestures(
-                        onDragStart = { _ ->
+                        onDragStart = { offset ->
                             velocityTracker = VelocityTracker()
+                            val width = if (overlayWidth > 0) overlayWidth.toFloat() else size.width.toFloat()
+                            val height = if (containerHeight > 0) containerHeight else size.height.toFloat()
+
+                            val isTopArea = offset.y < height * 0.18f
+                            val isCenterZone = offset.x >= width * 0.35f && offset.x <= width * 0.65f
+
+                            if (isTopArea || isCenterZone) {
+                                isSwipeToMinimize = true
+                                isDraggingLeft = false
+                                isDraggingRight = false
+                            } else if (offset.x < width * 0.35f) {
+                                isDraggingLeft = true
+                                isDraggingRight = false
+                                isSwipeToMinimize = false
+                                isBrightnessVisible = true
+                                isVolumeVisible = false
+                                lastGestureTime = System.currentTimeMillis()
+                            } else {
+                                isDraggingRight = true
+                                isDraggingLeft = false
+                                isSwipeToMinimize = false
+                                val currentVol = try {
+                                    audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                } catch (_: Exception) {
+                                    (volumeValue * maxVolume).roundToInt()
+                                }
+                                lastAppliedVol = currentVol
+                                volumeValue = (currentVol.toFloat() / maxVolume.toFloat()).coerceIn(0f, 1f)
+                                isVolumeVisible = true
+                                isBrightnessVisible = false
+                                lastGestureTime = System.currentTimeMillis()
+                            }
                         },
                         onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            velocityTracker.addPosition(change.uptimeMillis, change.position)
-                            coroutineScope.launch {
-                                val rawOffset = offsetY.value + dragAmount
-                                val newOffset = if (rawOffset < 0f) {
-                                    rawOffset * 0.35f
-                                } else {
-                                    rawOffset
+                            if (isSwipeToMinimize) {
+                                change.consume()
+                                coroutineScope.launch {
+                                    val rawOffset = offsetY.value + dragAmount
+                                    val newOffset = if (rawOffset < 0f) {
+                                        rawOffset * 0.35f
+                                    } else {
+                                        rawOffset
+                                    }
+                                    offsetY.snapTo(newOffset)
                                 }
-                                offsetY.snapTo(newOffset)
+                            } else if (isDraggingLeft || isDraggingRight) {
+                                change.consume()
+                                val sensitivity = 0.0028f
+                                val delta = -dragAmount * sensitivity
+
+                                if (isDraggingLeft) {
+                                    brightnessValue = (brightnessValue + delta).coerceIn(0.01f, 1.0f)
+                                    if (abs(brightnessValue - lastAppliedBrightness) >= 0.005f) {
+                                        lastAppliedBrightness = brightnessValue
+                                        activity?.let { act ->
+                                            act.window?.attributes = act.window.attributes?.apply {
+                                                screenBrightness = brightnessValue
+                                            }
+                                        }
+                                    }
+                                    isBrightnessVisible = true
+                                    lastGestureTime = System.currentTimeMillis()
+                                } else if (isDraggingRight) {
+                                    volumeValue = (volumeValue + delta).coerceIn(0f, 1f)
+                                    val targetVol = (volumeValue * maxVolume).roundToInt().coerceIn(0, maxVolume)
+                                    if (targetVol != lastAppliedVol) {
+                                        lastAppliedVol = targetVol
+                                        try {
+                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                                        } catch (_: Exception) {
+                                        }
+                                    }
+                                    isVolumeVisible = true
+                                    lastGestureTime = System.currentTimeMillis()
+                                }
                             }
                         },
                         onDragEnd = {
-                            val velocity = velocityTracker.calculateVelocity().y
-                            coroutineScope.launch {
-                                if (offsetY.value > collapseThresholdPx || velocity > 400f) {
-                                    offsetY.animateTo(
-                                        targetValue = containerHeight,
-                                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                                    )
-                                    onBack()
-                                } else {
+                            if (isSwipeToMinimize) {
+                                val velocity = velocityTracker.calculateVelocity().y
+                                coroutineScope.launch {
+                                    if (offsetY.value > collapseThresholdPx || velocity > 400f) {
+                                        offsetY.animateTo(
+                                            targetValue = containerHeight,
+                                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                                        )
+                                        onBack()
+                                    } else {
+                                        offsetY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(
+                                                durationMillis = 300,
+                                                easing = FastOutSlowInEasing
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            isSwipeToMinimize = false
+                            isDraggingLeft = false
+                            isDraggingRight = false
+                            lastGestureTime = System.currentTimeMillis()
+                        },
+                        onDragCancel = {
+                            if (isSwipeToMinimize) {
+                                coroutineScope.launch {
                                     offsetY.animateTo(
                                         targetValue = 0f,
                                         animationSpec = tween(
@@ -970,132 +1124,39 @@ fun VideoPlayerContent(
                                     )
                                 }
                             }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                offsetY.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = tween(
-                                        durationMillis = 300,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                )
-                            }
+                            isSwipeToMinimize = false
+                            isDraggingLeft = false
+                            isDraggingRight = false
+                            lastGestureTime = System.currentTimeMillis()
                         }
                     )
-                },
+                }
         ) {
-            Column(
-                modifier = Modifier
+            // 1. VIDEO SURFACE (Aspect ratio clipped box for Reels/Shorts & Landscape/Movie videos)
+            val outerViewportModifier = if (isPortraitVideo) {
+                Modifier
                     .fillMaxSize()
-                    .statusBarsPadding(),
+                    .statusBarsPadding()
+                    .padding(top = 48.dp, bottom = 68.dp)
+            } else {
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(top = 48.dp, bottom = 270.dp)
+            }
+
+            val videoContainerModifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(videoAspect)
+                .clipToBounds()
+
+            Box(
+                modifier = outerViewportModifier,
+                contentAlignment = Alignment.Center
             ) {
-                // 1. TOP BAR: Minimize & Now Playing
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Minimize",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            AnimatedWaveformIcon(
-                                isAnimating = uiState.isPlaying,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Now Playing",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.size(48.dp))
-                }
-
-                // 2. VIDEO DISPLAY SECTION
-                val videoBoxModifier = if (isPortraitVideo) {
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(vertical = 4.dp)
-                        .clipToBounds()
-                        .background(Color.Black)
-                } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                        .clipToBounds()
-                        .background(Color.Black)
-                }
-
                 Box(
-                    modifier = videoBoxModifier
-                        .pointerInput(uiState.isScreenLocked) {
-                            if (uiState.isScreenLocked) return@pointerInput
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                var isHolding = false
-                                var savedSpeed = currentPlaybackSpeed
-
-                                val holdJob = coroutineScope.launch {
-                                    delay(400)
-                                    savedSpeed = currentPlaybackSpeed
-                                    isHolding = true
-                                    currentOnSpeedSelected(2.0f)
-                                    isSpeedBoostActive = true
-                                    try {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    } catch (_: Exception) {
-                                    }
-                                }
-
-                                try {
-                                    val touchSlop = viewConfiguration.touchSlop
-                                    var totalPan = Offset.Zero
-
-                                    do {
-                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                        val panChange = event.calculatePan()
-                                        totalPan += panChange
-
-                                        if (!isHolding && (totalPan.getDistance() > touchSlop || event.changes.size > 1)) {
-                                            holdJob.cancel()
-                                        }
-                                    } while (event.changes.any { it.pressed })
-                                } finally {
-                                    holdJob.cancel()
-                                    if (isHolding) {
-                                        isSpeedBoostActive = false
-                                        currentOnSpeedSelected(savedSpeed)
-                                        try {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        } catch (_: Exception) {
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
+                    modifier = videoContainerModifier,
+                    contentAlignment = Alignment.Center
                 ) {
                     VideoPlayerSurface(
                         player = player,
@@ -1103,449 +1164,540 @@ fun VideoPlayerContent(
                         onRewind = onRewind,
                         onForward = onForward,
                         isScreenLocked = uiState.isScreenLocked,
+                        enableGestures = true,
                         externalZoomScale = zoomScale,
                         externalPanOffset = panOffset,
+                        fillScale = fillScale,
                         onZoomChanged = { scale, offset ->
                             zoomScale = scale
-                            panOffset = offset
+                            panOffset = if (scale <= 1.01f) Offset.Zero else offset
                             val formattedScale = String.format(Locale.US, "%.1fx", scale)
                             if (zoomBadgeText != formattedScale) {
                                 zoomBadgeText = formattedScale
                                 zoomBadgeTrigger++
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clipToBounds()
+                        modifier = Modifier.fillMaxSize()
                     )
 
-                    // PRESS & HOLD 2.0X SPEED BOOST BADGE IN PORTRAIT
-                    if (isSpeedBoostActive) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Black.copy(alpha = 0.85f),
+                    // FULLSCREEN EXPAND BUTTON AT BOTTOM-RIGHT OF VIDEO CONTAINER
+                    if (!isPortraitVideo && !uiState.isScreenLocked) {
+                        IconButton(
+                            onClick = onToggleOrientation,
                             modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(top = 16.dp)
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .size(40.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text(
-                                    text = "2.0x",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.Rounded.FastForward,
-                                    contentDescription = "2x Speed Active",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // PINCH TO ZOOM SCALE BADGE IN PORTRAIT
-                    if (isZoomIndicatorVisible && zoomBadgeText.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Black.copy(alpha = 0.85f),
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(top = if (isSpeedBoostActive) 64.dp else 16.dp)
-                        ) {
-                            Text(
-                                text = zoomBadgeText,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                            Icon(
+                                imageVector = Icons.Rounded.Fullscreen,
+                                contentDescription = "Expand to Landscape",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
+                }
+            }
 
-                    // EXPAND TO LANDSCAPE BUTTON
-                    IconButton(
-                        onClick = onToggleOrientation,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp)
-                            .size(40.dp)
-                    ) {
+            // 2. TOP BAR OVERLAY (ALWAYS VISIBLE in Portrait Mode; Hides action buttons when locked)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.85f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!uiState.isScreenLocked) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(
-                            imageVector = Icons.Rounded.Fullscreen,
-                            contentDescription = "Expand to Landscape",
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Minimize",
                             tint = Color.White,
                             modifier = Modifier.size(28.dp)
                         )
                     }
-                }
-
-                // 3. TITLE, SUBTITLE & PLAYBACK CONTROLS SECTION
-                val controlsColumnModifier = if (isPortraitVideo) {
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = 12.dp)
                 } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(horizontal = 24.dp)
+                    Spacer(modifier = Modifier.size(48.dp))
                 }
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = controlsColumnModifier,
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = shortTitle,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    val subtitleText = uiState.currentMediaItem?.getFormattedSubtitle(includeFolder = false)
-                    if (!subtitleText.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = subtitleText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.clip(RoundedCornerShape(12.dp)),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        AnimatedWaveformIcon(
+                            isAnimating = uiState.isPlaying,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Text(
-                            text = uiState.currentMediaItem?.resolution ?: "1920x1080",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            text = "Now Playing",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color.White
                         )
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.size(48.dp))
+            }
 
-                    if (!uiState.isScreenLocked) {
-                        // Seekbar
-                        Slider(
-                            value = if (isUserScrubbing) userScrubPositionMs else uiState.currentPositionMs.toFloat(),
-                            onValueChange = { newValue ->
-                                if (!isUserScrubbing) {
-                                    isUserScrubbing = true
-                                    onScrubbingChanged(true)
-                                }
-                                userScrubPositionMs = newValue
-                            },
-                            onValueChangeFinished = {
-                                isUserScrubbing = false
-                                onScrubbingChanged(false)
-                                onSeek(userScrubPositionMs.toLong())
-                            },
-                            valueRange = 0f..(uiState.durationMs.toFloat().coerceAtLeast(1f)),
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+            // 3. BOTTOM CONTROLS OVERLAY (Tap-to-hide for Reel/Shorts; Always visible for Landscape videos in Portrait mode)
+            val showControlsInPortrait = !isPortraitVideo || uiState.areControlsVisible
 
-                        // Time Row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = currentPosText,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface,
+            AnimatedVisibility(
+                visible = showControlsInPortrait,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (uiState.isScreenLocked) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onOverlayClick
                             )
-
-                            Text(
-                                text = durationText,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Primary Controls Row: Shuffle, Previous, Play/Pause, Next, Loop
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = onToggleShuffle,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Shuffle,
-                                    contentDescription = if (uiState.isShuffleModeEnabled) "Shuffle On" else "Shuffle Off",
-                                    tint = if (uiState.isShuffleModeEnabled)
-                                        MaterialTheme.colorScheme.primary
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onPrevious,
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SkipPrevious,
-                                    contentDescription = "Previous Track",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(36.dp),
-                                )
-                            }
-
-                            Surface(
-                                onClick = onPlayPauseToggle,
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(68.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (uiState.isBuffering) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(36.dp),
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            strokeWidth = 3.dp,
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = if (uiState.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(44.dp),
-                                        )
-                                    }
-                                }
-                            }
-
-                            IconButton(
-                                onClick = onNext,
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SkipNext,
-                                    contentDescription = "Next Track",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(36.dp),
-                                )
-                            }
-
-                            val (repeatIcon, repeatTint, repeatDesc) = when (uiState.loopMode) {
-                                LoopMode.OFF -> Triple(
-                                    Icons.Rounded.Repeat,
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    "Loop Off"
-                                )
-                                LoopMode.ALL -> Triple(
-                                    Icons.Rounded.Repeat,
-                                    MaterialTheme.colorScheme.primary,
-                                    "Loop All"
-                                )
-                                LoopMode.ONE -> Triple(
-                                    Icons.Rounded.RepeatOne,
-                                    MaterialTheme.colorScheme.primary,
-                                    "Loop One"
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onToggleLoop,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = repeatIcon,
-                                    contentDescription = repeatDesc,
-                                    tint = repeatTint,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // Secondary Controls Row: Rewind (-10s), Speed Selector, Fast-Forward (+10s)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = onRewind,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Replay10,
-                                    contentDescription = "Rewind 10s",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(28.dp),
-                                )
-                            }
-
-                            PlaybackSpeedSelector(
-                                currentSpeed = uiState.playbackSpeed,
-                                onSpeedSelected = onSpeedSelected,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                onMenuExpandedChanged = onSpeedMenuExpandedChanged
-                            )
-
-                            IconButton(
-                                onClick = onForward,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Forward10,
-                                    contentDescription = "Forward 10s",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(28.dp),
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // NEW THIRD ROW: Audio | Subtitles | Lock/Unlock (Directly below existing controls)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // Audio Option
-                            val isAudioActive = uiState.selectedAudioTrackId != null
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable { onOpenAudioTracks() }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Audiotrack,
-                                    contentDescription = "Audio Track",
-                                    tint = if (isAudioActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Audio",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (isAudioActive) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isAudioActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            // Subtitles Option
-                            val isSubActive = uiState.selectedSubtitleTrackId != null
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable { onOpenSubtitleTracks() }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ClosedCaption,
-                                    contentDescription = "Subtitles",
-                                    tint = if (isSubActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Subtitles",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (isSubActive) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isSubActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            // Lock/Unlock Option
-                            val isLockActive = uiState.isScreenLocked
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable { onToggleScreenLock() }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isLockActive) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-                                    contentDescription = if (isLockActive) "Unlock" else "Lock",
-                                    tint = if (isLockActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = if (isLockActive) "Unlock" else "Lock",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (isLockActive) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isLockActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    } else {
-                        // Locked Screen Indicator in Portrait Mode
-                        Spacer(modifier = Modifier.height(32.dp))
+                            .padding(16.dp),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
                         Surface(
                             onClick = onToggleScreenLock,
-                            shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.75f),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .navigationBarsPadding()
+                                .padding(16.dp)
+                                .size(56.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                            ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Rounded.Lock,
-                                    contentDescription = "Tap to Unlock",
+                                    contentDescription = "Unlock Screen",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Screen Locked - Tap to Unlock",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
                         }
                     }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // BOTTOM CONTROLS OVERLAY
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.95f)
+                                        )
+                                    )
+                                )
+                                .navigationBarsPadding()
+                                .padding(horizontal = 24.dp)
+                                .padding(top = 16.dp, bottom = 68.dp),
+                        ) {
+                            Text(
+                                text = shortTitle,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = Color.White,
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                            val subtitleText = uiState.currentMediaItem?.getFormattedSubtitle(includeFolder = false)
+                            if (!subtitleText.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = subtitleText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = Color.White.copy(alpha = 0.8f),
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White.copy(alpha = 0.2f),
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)),
+                            ) {
+                                Text(
+                                    text = uiState.currentMediaItem?.resolution ?: "720x1280",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Seekbar Slider
+                            Slider(
+                                value = if (isUserScrubbing) userScrubPositionMs else uiState.currentPositionMs.toFloat(),
+                                onValueChange = { newValue ->
+                                    if (!isUserScrubbing) {
+                                        isUserScrubbing = true
+                                        onScrubbingChanged(true)
+                                    }
+                                    userScrubPositionMs = newValue
+                                },
+                                onValueChangeFinished = {
+                                    isUserScrubbing = false
+                                    onScrubbingChanged(false)
+                                    onSeek(userScrubPositionMs.toLong())
+                                },
+                                valueRange = 0f..(uiState.durationMs.toFloat().coerceAtLeast(1f)),
+                                track = { sliderState ->
+                                    SliderDefaults.Track(
+                                        sliderState = sliderState,
+                                        modifier = Modifier.height(6.dp),
+                                        colors = SliderDefaults.colors(
+                                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                                            inactiveTrackColor = Color.White.copy(alpha = 0.35f)
+                                        ),
+                                        drawStopIndicator = null
+                                    )
+                                },
+                                thumb = {
+                                    GlowingSeekbarThumb(isScrubbing = isUserScrubbing)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // Time Labels Row
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = currentPosText,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = Color.White,
+                                )
+
+                                Text(
+                                    text = durationText,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = Color.White.copy(alpha = 0.8f),
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Primary Playback Controls: Shuffle, Previous, Play/Pause, Next, Loop
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(
+                                    onClick = onToggleShuffle,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Shuffle,
+                                        contentDescription = if (uiState.isShuffleModeEnabled) "Shuffle On" else "Shuffle Off",
+                                        tint = if (uiState.isShuffleModeEnabled)
+                                            MaterialTheme.colorScheme.primary
+                                        else
+                                            Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = onPrevious,
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipPrevious,
+                                        contentDescription = "Previous Track",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(36.dp),
+                                    )
+                                }
+
+                                Surface(
+                                    onClick = onPlayPauseToggle,
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(68.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        if (uiState.isBuffering) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(36.dp),
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                strokeWidth = 3.dp,
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = if (uiState.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                                contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.size(44.dp),
+                                            )
+                                        }
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = onNext,
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = "Next Track",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(36.dp),
+                                    )
+                                }
+
+                                val (repeatIcon, repeatTint, repeatDesc) = when (uiState.loopMode) {
+                                    LoopMode.OFF -> Triple(
+                                        Icons.Rounded.Repeat,
+                                        Color.White.copy(alpha = 0.7f),
+                                        "Loop Off"
+                                    )
+                                    LoopMode.ALL -> Triple(
+                                        Icons.Rounded.Repeat,
+                                        MaterialTheme.colorScheme.primary,
+                                        "Loop All"
+                                    )
+                                    LoopMode.ONE -> Triple(
+                                        Icons.Rounded.RepeatOne,
+                                        MaterialTheme.colorScheme.primary,
+                                        "Loop One"
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = onToggleLoop,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = repeatIcon,
+                                        contentDescription = repeatDesc,
+                                        tint = repeatTint,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Secondary Controls Row: Audio | Subtitles | Speed | Lock
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val isAudioActive = uiState.selectedAudioTrackId != null
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { onOpenAudioTracks() }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Audiotrack,
+                                        contentDescription = "Audio Track",
+                                        tint = if (isAudioActive) MaterialTheme.colorScheme.primary else Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Audio",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isAudioActive) FontWeight.Bold else FontWeight.Medium
+                                        ),
+                                        color = if (isAudioActive) MaterialTheme.colorScheme.primary else Color.White
+                                    )
+                                }
+
+                                val isSubActive = uiState.selectedSubtitleTrackId != null
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { onOpenSubtitleTracks() }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ClosedCaption,
+                                        contentDescription = "Subtitle Track",
+                                        tint = if (isSubActive) MaterialTheme.colorScheme.primary else Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Subtitles",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isSubActive) FontWeight.Bold else FontWeight.Medium
+                                        ),
+                                        color = if (isSubActive) MaterialTheme.colorScheme.primary else Color.White
+                                    )
+                                }
+
+                                val isSpeedActive = uiState.playbackSpeed != 1.0f
+                                val speedTint = if (isSpeedActive) MaterialTheme.colorScheme.primary else Color.White
+                                PlaybackSpeedSelector(
+                                    currentSpeed = uiState.playbackSpeed,
+                                    onSpeedSelected = onSpeedSelected,
+                                    tint = speedTint,
+                                    showBackground = false,
+                                    showText = true,
+                                    isColumnLayout = true,
+                                    onMenuExpandedChanged = onSpeedMenuExpandedChanged
+                                )
+
+                                val isLockActive = uiState.isScreenLocked
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { onToggleScreenLock() }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isLockActive) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                                        contentDescription = if (isLockActive) "Unlock" else "Lock",
+                                        tint = if (isLockActive) MaterialTheme.colorScheme.primary else Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (isLockActive) "Unlock" else "Lock",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isLockActive) FontWeight.Bold else FontWeight.Medium
+                                        ),
+                                        color = if (isLockActive) MaterialTheme.colorScheme.primary else Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. GESTURE OVERLAYS (BRIGHTNESS, VOLUME, SPEED & ZOOM BADGES)
+            Box(
+                modifier = outerViewportModifier
+            ) {
+                // BRIGHTNESS SLIDER (FAR LEFT SIDE, VERTICALLY CENTERED ON VIDEO)
+                AnimatedVisibility(
+                    visible = isBrightnessVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 24.dp)
+                ) {
+                    VerticalVolumeBrightnessSlider(
+                        value = brightnessValue,
+                        icon = Icons.Rounded.WbSunny,
+                        contentDescription = "Brightness Level"
+                    )
+                }
+
+                // VOLUME SLIDER (FAR RIGHT SIDE, VERTICALLY CENTERED ON VIDEO)
+                AnimatedVisibility(
+                    visible = isVolumeVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 24.dp)
+                ) {
+                    val volumeIcon = when {
+                        volumeValue <= 0.01f -> Icons.AutoMirrored.Rounded.VolumeOff
+                        volumeValue < 0.5f -> Icons.AutoMirrored.Rounded.VolumeDown
+                        else -> Icons.AutoMirrored.Rounded.VolumeUp
+                    }
+                    VerticalVolumeBrightnessSlider(
+                        value = volumeValue,
+                        icon = volumeIcon,
+                        contentDescription = "Volume Level"
+                    )
+                }
+
+                // SPEED BOOST BADGE
+                if (isSpeedBoostActive) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.Black.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 16.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "2.0x",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.FastForward,
+                                contentDescription = "2x Speed Active",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                // ZOOM SCALE BADGE
+                if (isZoomIndicatorVisible && zoomBadgeText.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.Black.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 16.dp)
+                    ) {
+                        Text(
+                            text = zoomBadgeText,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                    }
                 }
             }
         }

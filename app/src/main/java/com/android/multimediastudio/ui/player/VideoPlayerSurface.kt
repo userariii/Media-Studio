@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -168,10 +170,10 @@ fun VideoPlayerSurface(
             .pointerInput(isScreenLocked) {
                 if (isScreenLocked) return@pointerInput
                 detectVideoTransformGestures(
-                    isZoomed = { currentZoomScale > 1.0f },
+                    isZoomed = { currentZoomScale > 1.01f },
                     onGesture = { _, pan, zoom, _ ->
                         val newScale = (currentZoomScale * zoom).coerceIn(1.0f, 8.0f)
-                        val newPan = if (newScale <= 1.0f) {
+                        val newPan = if (newScale <= 1.01f) {
                             Offset.Zero
                         } else {
                             val width = if (containerSize.width > 0) containerSize.width.toFloat() else 1080f
@@ -211,33 +213,17 @@ fun VideoPlayerSurface(
             update = { playerView ->
                 playerView.player = player
                 playerView.keepScreenOn = player?.isPlaying == true
-
-                val isZoomed = zoomScale > 1.01f
-                val effectiveFillScale = if (fillScale > 1.01f) fillScale else 1.0f
-
-                if (isZoomed && effectiveFillScale > 1.01f) {
-                    playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                } else {
-                    playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                }
-
-                val relativeScale = if (isZoomed && effectiveFillScale > 1.01f) {
-                    (zoomScale / effectiveFillScale).coerceAtLeast(1.0f)
-                } else {
-                    zoomScale
-                }
-
-                val videoTarget = playerView.videoSurfaceView ?: playerView.findViewById<View>(androidx.media3.ui.R.id.exo_content_frame)
-                videoTarget?.apply {
-                    scaleX = relativeScale
-                    scaleY = relativeScale
-                    translationX = panOffset.x
-                    translationY = panOffset.y
-                }
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             },
             modifier = Modifier
                 .fillMaxSize()
-                .clipToBounds()
+                .graphicsLayer {
+                    scaleX = zoomScale
+                    scaleY = zoomScale
+                    translationX = if (zoomScale <= 1.01f) 0f else panOffset.x
+                    translationY = if (zoomScale <= 1.01f) 0f else panOffset.y
+                    transformOrigin = TransformOrigin(0.5f, 0.5f)
+                }
         )
 
         // DOUBLE-TAP SEEK INDICATOR (-10s / +10s / +20s / +50s)

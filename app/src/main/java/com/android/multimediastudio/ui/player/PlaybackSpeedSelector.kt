@@ -34,6 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+
 @Composable
 fun PlaybackSpeedSelector(
     currentSpeed: Float,
@@ -42,6 +45,7 @@ fun PlaybackSpeedSelector(
     tint: Color = Color.Unspecified,
     showBackground: Boolean = true,
     showText: Boolean = true,
+    isColumnLayout: Boolean = false,
     onMenuExpandedChanged: ((Boolean) -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -49,7 +53,38 @@ fun PlaybackSpeedSelector(
     val textColor = if (tint != Color.Unspecified) tint else MaterialTheme.colorScheme.onSurface
 
     Box(modifier = modifier) {
-        if (showBackground) {
+        if (isColumnLayout) {
+            val isSpeedActive = currentSpeed != 1.0f
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        expanded = true
+                        onMenuExpandedChanged?.invoke(true)
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Speed,
+                    contentDescription = "Playback Speed",
+                    tint = textColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                if (showText) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (currentSpeed == 1.0f) "Speed" else "${currentSpeed}x",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = if (isSpeedActive) FontWeight.Bold else FontWeight.Medium
+                        ),
+                        color = textColor,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else if (showBackground) {
             Surface(
                 onClick = {
                     expanded = true
