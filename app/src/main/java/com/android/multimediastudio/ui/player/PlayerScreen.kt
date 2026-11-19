@@ -73,9 +73,13 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(activity) {
+    val surfaceColor = MaterialTheme.colorScheme.surface.toArgb()
+    val isLightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(surfaceColor) > 0.5
+    val isDarkTheme = !isLightSurface
+
+    LaunchedEffect(activity, isDarkTheme) {
         if (activity != null) {
-            ImmersiveUtils.setImmersiveFullscreen(activity, enabled = false)
+            ImmersiveUtils.setImmersiveFullscreen(activity, enabled = false, isDarkTheme = isDarkTheme)
         }
     }
 
@@ -115,21 +119,21 @@ fun PlayerScreen(
     }
 
     // Handle landscape orientation toggling and immersive fullscreen mode
-    DisposableEffect(uiState.isLandscape, activity) {
+    DisposableEffect(uiState.isLandscape, activity, isDarkTheme) {
         val currentActivity = activity
         if (currentActivity != null) {
             if (uiState.isLandscape) {
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = true)
+                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = true, isDarkTheme = isDarkTheme)
             } else {
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false)
+                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
             }
         }
         onDispose {
             if (currentActivity != null) {
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false)
+                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
             }
         }
     }
@@ -183,8 +187,6 @@ fun PlayerScreen(
     val handleBack: () -> Unit = onClose
 
     val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
-    val surfaceColor = MaterialTheme.colorScheme.surface.toArgb()
-    val isLightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(surfaceColor) > 0.5
 
     DisposableEffect(activity, isVideo, isLightSurface) {
         val window = activity?.window
@@ -194,23 +196,9 @@ fun PlayerScreen(
             windowInsetsController.isAppearanceLightStatusBars = shouldLightIcons
             windowInsetsController.isAppearanceLightNavigationBars = shouldLightIcons
         }
-        @Suppress("DEPRECATION")
-        val oldNavColor = window?.navigationBarColor
-        @Suppress("DEPRECATION")
-        val oldStatusColor = window?.statusBarColor
-        if (window != null) {
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = surfaceColor
-            @Suppress("DEPRECATION")
-            window.statusBarColor = surfaceColor
-        }
         onDispose {
             val window = activity?.window
             if (window != null) {
-                @Suppress("DEPRECATION")
-                oldNavColor?.let { window.navigationBarColor = it }
-                @Suppress("DEPRECATION")
-                oldStatusColor?.let { window.statusBarColor = it }
                 val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
                 windowInsetsController.isAppearanceLightStatusBars = isLightSurface
                 windowInsetsController.isAppearanceLightNavigationBars = isLightSurface
