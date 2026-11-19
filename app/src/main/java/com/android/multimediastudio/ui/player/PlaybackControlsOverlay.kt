@@ -308,6 +308,42 @@ fun VideoPlayerContent(
         }
     }
 
+    val isPortraitFromMetadata = if (effectiveVideoWidth <= 0f || effectiveVideoHeight <= 0f) {
+        val res = uiState.currentMediaItem?.resolution ?: ""
+        if (res.contains("x")) {
+            val parts = res.split("x")
+            val w = parts.getOrNull(0)?.toFloatOrNull() ?: 0f
+            val h = parts.getOrNull(1)?.toFloatOrNull() ?: 0f
+            h > w && w > 0f
+        } else {
+            false
+        }
+    } else {
+        effectiveVideoHeight > effectiveVideoWidth
+    }
+
+    val isPortraitVideo = isPortraitFromMetadata || (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f && effectiveVideoHeight > effectiveVideoWidth)
+
+    val calculatedAspect = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
+        effectiveVideoWidth / effectiveVideoHeight
+    } else {
+        val res = uiState.currentMediaItem?.resolution ?: ""
+        if (res.contains("x")) {
+            val parts = res.split("x")
+            val w = parts.getOrNull(0)?.toFloatOrNull() ?: 0f
+            val h = parts.getOrNull(1)?.toFloatOrNull() ?: 0f
+            if (w > 0f && h > 0f) w / h else 16f / 9f
+        } else {
+            16f / 9f
+        }
+    }
+
+    val portraitAspectRatio = if (isPortraitVideo) {
+        calculatedAspect.coerceIn(0.52f, 0.85f)
+    } else {
+        16f / 9f
+    }
+
     if (uiState.isLandscape) {
         // LANDSCAPE MODE (Full screen video)
         Box(
@@ -1020,7 +1056,7 @@ fun VideoPlayerContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
+                        .aspectRatio(portraitAspectRatio)
                         .clipToBounds()
                         .background(Color.Black)
                         .pointerInput(uiState.isScreenLocked) {
