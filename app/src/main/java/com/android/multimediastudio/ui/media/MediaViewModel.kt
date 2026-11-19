@@ -33,7 +33,7 @@ data class MediaUiState(
     val pendingDeleteIntentSender: IntentSender? = null,
     val isSettingsOpen: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val hideSocialMedia: Boolean = false
+    val hideSocialMedia: Boolean = true
 ) {
     fun getItemKey(item: MediaItem): String = "${item.mediaType}_${item.id}"
     fun isItemSelected(item: MediaItem): Boolean = selectedItemKeys.contains(getItemKey(item))
@@ -47,7 +47,7 @@ class MediaViewModel(
     private val _uiState = MutableStateFlow(
         MediaUiState(
             themeMode = preferencesRepository?.getInitialThemeMode() ?: ThemeMode.SYSTEM,
-            hideSocialMedia = preferencesRepository?.getInitialHideSocialMedia() ?: false
+            hideSocialMedia = preferencesRepository?.getInitialHideSocialMedia() ?: true
         )
     )
     val uiState: StateFlow<MediaUiState> = _uiState.asStateFlow()

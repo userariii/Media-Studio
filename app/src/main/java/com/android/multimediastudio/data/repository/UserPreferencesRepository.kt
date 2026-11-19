@@ -31,7 +31,7 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     fun getInitialHideSocialMedia(): Boolean {
-        return syncPrefs.getBoolean("hide_social_media", false)
+        return syncPrefs.getBoolean("hide_social_media", true)
     }
 
     val themeModeStream: Flow<ThemeMode> = dataStore.data.map { prefs ->
@@ -44,7 +44,7 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val hideSocialMediaStream: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[hideSocialMediaKey] ?: syncPrefs.getBoolean("hide_social_media", false)
+        prefs[hideSocialMediaKey] ?: syncPrefs.getBoolean("hide_social_media", true)
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {
