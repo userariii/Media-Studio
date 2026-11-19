@@ -77,12 +77,6 @@ fun PlayerScreen(
     val isLightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(surfaceColor) > 0.5
     val isDarkTheme = !isLightSurface
 
-    LaunchedEffect(activity, isDarkTheme) {
-        if (activity != null) {
-            ImmersiveUtils.setImmersiveFullscreen(activity, enabled = false, isDarkTheme = isDarkTheme)
-        }
-    }
-
     // Keep screen awake while watching video
     DisposableEffect(currentMediaItem.mediaType, uiState.isPlaying, activity) {
         val window = activity?.window
@@ -127,7 +121,6 @@ fun PlayerScreen(
                 ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = true, isDarkTheme = isDarkTheme)
             } else {
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
             }
         }
         onDispose {

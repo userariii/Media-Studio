@@ -44,7 +44,12 @@ class MediaViewModel(
     private val preferencesRepository: UserPreferencesRepository? = null
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(MediaUiState())
+    private val _uiState = MutableStateFlow(
+        MediaUiState(
+            themeMode = preferencesRepository?.getInitialThemeMode() ?: ThemeMode.SYSTEM,
+            hideSocialMedia = preferencesRepository?.getInitialHideSocialMedia() ?: false
+        )
+    )
     val uiState: StateFlow<MediaUiState> = _uiState.asStateFlow()
 
     init {
