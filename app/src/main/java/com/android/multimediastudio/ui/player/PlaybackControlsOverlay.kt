@@ -324,26 +324,6 @@ fun VideoPlayerContent(
 
     val isPortraitVideo = isPortraitFromMetadata || (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f && effectiveVideoHeight > effectiveVideoWidth)
 
-    val calculatedAspect = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
-        effectiveVideoWidth / effectiveVideoHeight
-    } else {
-        val res = uiState.currentMediaItem?.resolution ?: ""
-        if (res.contains("x")) {
-            val parts = res.split("x")
-            val w = parts.getOrNull(0)?.toFloatOrNull() ?: 0f
-            val h = parts.getOrNull(1)?.toFloatOrNull() ?: 0f
-            if (w > 0f && h > 0f) w / h else 16f / 9f
-        } else {
-            16f / 9f
-        }
-    }
-
-    val portraitAspectRatio = if (isPortraitVideo) {
-        calculatedAspect.coerceIn(0.52f, 0.85f)
-    } else {
-        16f / 9f
-    }
-
     if (uiState.isLandscape) {
         // LANDSCAPE MODE (Full screen video)
         Box(
@@ -1053,12 +1033,23 @@ fun VideoPlayerContent(
                 }
 
                 // 2. VIDEO DISPLAY SECTION
-                Box(
-                    modifier = Modifier
+                val videoBoxModifier = if (isPortraitVideo) {
+                    Modifier
                         .fillMaxWidth()
-                        .aspectRatio(portraitAspectRatio)
+                        .weight(1f)
+                        .padding(vertical = 4.dp)
                         .clipToBounds()
                         .background(Color.Black)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clipToBounds()
+                        .background(Color.Black)
+                }
+
+                Box(
+                    modifier = videoBoxModifier
                         .pointerInput(uiState.isScreenLocked) {
                             if (uiState.isScreenLocked) return@pointerInput
                             awaitEachGesture {
@@ -1193,12 +1184,21 @@ fun VideoPlayerContent(
                 }
 
                 // 3. TITLE, SUBTITLE & PLAYBACK CONTROLS SECTION
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
+                val controlsColumnModifier = if (isPortraitVideo) {
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 12.dp)
+                } else {
+                    Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .padding(horizontal = 24.dp),
+                        .padding(horizontal = 24.dp)
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = controlsColumnModifier,
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
 
