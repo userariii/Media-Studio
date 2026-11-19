@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -75,6 +76,21 @@ fun PlayerScreen(
     LaunchedEffect(activity) {
         if (activity != null) {
             ImmersiveUtils.setImmersiveFullscreen(activity, enabled = false)
+        }
+    }
+
+    // Keep screen awake while watching video
+    DisposableEffect(currentMediaItem.mediaType, uiState.isPlaying, activity) {
+        val window = activity?.window
+        val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
+        val shouldKeepScreenOn = isVideo && uiState.isPlaying
+        if (shouldKeepScreenOn && window != null) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (isVideo && window != null) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
         }
     }
 

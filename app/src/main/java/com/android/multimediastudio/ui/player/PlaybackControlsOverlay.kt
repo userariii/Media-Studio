@@ -382,20 +382,6 @@ fun VideoPlayerContent(
                         }
                     )
                 }
-                .pointerInput(uiState.isScreenLocked, fillScale) {
-                    if (uiState.isScreenLocked) return@pointerInput
-                    detectLandscapeVideoTransformGestures(
-                        currentZoomScale = { currentZoomScale },
-                        fillScale = { fillScale },
-                        onGestureUpdate = { newScale, _, badgeText ->
-                            zoomScale = newScale
-                            panOffset = Offset.Zero
-                            if (badgeText != null) {
-                                showZoomBadge(badgeText)
-                            }
-                        }
-                    )
-                }
                 .pointerInput(uiState.isScreenLocked) {
                     if (uiState.isScreenLocked) return@pointerInput
                     var isDraggingLeft = false
@@ -469,6 +455,20 @@ fun VideoPlayerContent(
                         }
                     )
                 }
+                .pointerInput(uiState.isScreenLocked, fillScale) {
+                    if (uiState.isScreenLocked) return@pointerInput
+                    detectLandscapeVideoTransformGestures(
+                        currentZoomScale = { currentZoomScale },
+                        fillScale = { fillScale },
+                        onGestureUpdate = { newScale, _, badgeText ->
+                            zoomScale = newScale
+                            panOffset = Offset.Zero
+                            if (badgeText != null) {
+                                showZoomBadge(badgeText)
+                            }
+                        }
+                    )
+                }
         ) {
             VideoPlayerSurface(
                 player = player,
@@ -476,14 +476,11 @@ fun VideoPlayerContent(
                 onRewind = onRewind,
                 onForward = onForward,
                 isScreenLocked = uiState.isScreenLocked,
-                enableGestures = true,
+                enableGestures = false,
                 externalZoomScale = zoomScale,
                 externalPanOffset = Offset.Zero,
                 fillScale = fillScale,
-                onZoomChanged = { scale, _ ->
-                    zoomScale = scale
-                    panOffset = Offset.Zero
-                },
+                onZoomChanged = null,
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -1693,9 +1690,9 @@ suspend fun PointerInputScope.detectLandscapeVideoTransformGestures(
         val initialScale = currentZoomScale()
         val targetFillScale = fillScale()
 
-        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
         do {
-            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+            val event = awaitPointerEvent(pass = PointerEventPass.Main)
             val canceled = event.changes.any { it.isConsumed }
             if (!canceled) {
                 val zoomChange = event.calculateZoom()

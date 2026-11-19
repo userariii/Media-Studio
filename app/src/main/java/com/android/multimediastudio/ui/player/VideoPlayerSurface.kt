@@ -205,10 +205,12 @@ fun VideoPlayerSurface(
                 playerView.player = player
                 playerView.clipChildren = true
                 playerView.clipToPadding = true
+                playerView.keepScreenOn = player?.isPlaying == true
                 playerView
             },
             update = { playerView ->
                 playerView.player = player
+                playerView.keepScreenOn = player?.isPlaying == true
 
                 val isZoomed = zoomScale > 1.01f
                 val effectiveFillScale = if (fillScale > 1.01f) fillScale else 1.0f

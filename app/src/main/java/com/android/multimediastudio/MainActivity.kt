@@ -12,6 +12,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -99,7 +100,15 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 playerViewModel.uiState.collect { state ->
-                    val isVideoPlaying = state.isPlaying && state.currentMediaItem?.mediaType == MediaType.VIDEO
+                    val isVideo = state.currentMediaItem?.mediaType == MediaType.VIDEO
+                    val isVideoPlaying = state.isPlaying && isVideo
+
+                    if (isVideoPlaying) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+
                     updatePipParams(state.isPlaying, isVideoPlaying)
                 }
             }
@@ -125,6 +134,11 @@ class MainActivity : ComponentActivity() {
         if (hasFocus && playerViewModel.uiState.value.isLandscape) {
             ImmersiveUtils.setImmersiveFullscreen(this, enabled = true)
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     override fun onDestroy() {
