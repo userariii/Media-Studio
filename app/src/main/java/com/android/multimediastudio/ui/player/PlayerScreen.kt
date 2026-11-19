@@ -182,18 +182,18 @@ fun PlayerScreen(
 
     val handleBack: () -> Unit = onClose
 
+    val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
     val surfaceColor = MaterialTheme.colorScheme.surface.toArgb()
-    LaunchedEffect(activity, surfaceColor) {
+    val isLightSurface = androidx.core.graphics.ColorUtils.calculateLuminance(surfaceColor) > 0.5
+
+    DisposableEffect(activity, isVideo, isLightSurface) {
         val window = activity?.window
         if (window != null) {
             val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            windowInsetsController.isAppearanceLightStatusBars = false
-            windowInsetsController.isAppearanceLightNavigationBars = false
+            val shouldLightIcons = if (isVideo) false else isLightSurface
+            windowInsetsController.isAppearanceLightStatusBars = shouldLightIcons
+            windowInsetsController.isAppearanceLightNavigationBars = shouldLightIcons
         }
-    }
-
-    DisposableEffect(activity, surfaceColor) {
-        val window = activity?.window
         @Suppress("DEPRECATION")
         val oldNavColor = window?.navigationBarColor
         @Suppress("DEPRECATION")
@@ -205,11 +205,15 @@ fun PlayerScreen(
             window.statusBarColor = surfaceColor
         }
         onDispose {
+            val window = activity?.window
             if (window != null) {
                 @Suppress("DEPRECATION")
                 oldNavColor?.let { window.navigationBarColor = it }
                 @Suppress("DEPRECATION")
                 oldStatusColor?.let { window.statusBarColor = it }
+                val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                windowInsetsController.isAppearanceLightStatusBars = isLightSurface
+                windowInsetsController.isAppearanceLightNavigationBars = isLightSurface
             }
         }
     }

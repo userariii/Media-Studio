@@ -82,9 +82,6 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isNavigationBarContrastEnforced = false
             }
-            val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            windowInsetsController.isAppearanceLightStatusBars = false
-            windowInsetsController.isAppearanceLightNavigationBars = false
         }
 
         val imageLoader = ImageLoader.Builder(applicationContext)
