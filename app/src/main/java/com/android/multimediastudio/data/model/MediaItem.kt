@@ -53,9 +53,39 @@ data class MediaItem(
     val artist: String? = null,
     val album: String? = null,
     val resolution: String? = null,
+    val displayName: String? = null,
+    val relativePath: String? = null,
+    val filePath: String? = null,
 ) : Parcelable {
     val cleanArtist: String? get() = sanitizeArtist(artist)
     val cleanAlbum: String? get() = sanitizeAlbum(album)
+
+    fun isSocialMedia(): Boolean {
+        val combinedText = buildString {
+            append(title.lowercase(Locale.ROOT)).append(" ")
+            displayName?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
+            artist?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
+            album?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
+            relativePath?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
+            filePath?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
+        }
+
+        val socialAppKeywords = listOf(
+            "whatsapp", "telegram", "facebook", "instagram", "snapchat",
+            "tiktok", "twitter", "messenger", "viber", "signal", "line"
+        )
+
+        if (socialAppKeywords.any { combinedText.contains(it) }) {
+            return true
+        }
+
+        val waPattern = Regex("(vid|aud|ptt|img|doc)-\\d{8}-wa\\d+", RegexOption.IGNORE_CASE)
+        if (waPattern.containsMatchIn(title) || (displayName != null && waPattern.containsMatchIn(displayName))) {
+            return true
+        }
+
+        return false
+    }
 
     val formattedDuration: String @JvmName("getFormattedDurationProp") get() = getFormattedDuration()
     val formattedSize: String @JvmName("getFormattedSizeProp") get() = getFormattedSize()

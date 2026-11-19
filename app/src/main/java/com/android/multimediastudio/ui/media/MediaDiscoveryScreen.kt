@@ -263,6 +263,8 @@ fun MediaDiscoveryScreen(
             SettingsScreen(
                 themeMode = uiState.themeMode,
                 onThemeModeSelected = { mode -> viewModel.setThemeMode(mode) },
+                hideSocialMedia = uiState.hideSocialMedia,
+                onHideSocialMediaChanged = { hide -> viewModel.setHideSocialMedia(hide) },
                 onBack = { viewModel.closeSettings() },
                 modifier = Modifier.fillMaxSize()
             )

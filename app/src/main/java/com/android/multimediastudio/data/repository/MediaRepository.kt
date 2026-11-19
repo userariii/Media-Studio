@@ -13,7 +13,12 @@ interface MediaRepository {
     val mediaStream: Flow<List<MediaItem>>
     suspend fun scanMedia(filter: MediaFilter = MediaFilter.ALL): List<MediaItem>
     suspend fun refresh(filter: MediaFilter = MediaFilter.ALL): List<MediaItem>
-    fun filterMedia(items: List<MediaItem>, filter: MediaFilter, searchQuery: String = ""): List<MediaItem>
+    fun filterMedia(
+        items: List<MediaItem>,
+        filter: MediaFilter,
+        searchQuery: String = "",
+        hideSocialMedia: Boolean = false
+    ): List<MediaItem>
     suspend fun deleteMediaFiles(items: List<MediaItem>): DeleteResult
 }
 
@@ -34,11 +39,21 @@ class MediaRepositoryImpl(
         return scanMedia(filter)
     }
 
-    override fun filterMedia(items: List<MediaItem>, filter: MediaFilter, searchQuery: String): List<MediaItem> {
+    override fun filterMedia(
+        items: List<MediaItem>,
+        filter: MediaFilter,
+        searchQuery: String,
+        hideSocialMedia: Boolean
+    ): List<MediaItem> {
+        val socialFiltered = if (hideSocialMedia) {
+            items.filter { !it.isSocialMedia() }
+        } else {
+            items
+        }
         val typeFiltered = when (filter) {
-            MediaFilter.ALL -> items
-            MediaFilter.VIDEO -> items.filter { it.mediaType == MediaType.VIDEO }
-            MediaFilter.AUDIO -> items.filter { it.mediaType == MediaType.AUDIO }
+            MediaFilter.ALL -> socialFiltered
+            MediaFilter.VIDEO -> socialFiltered.filter { it.mediaType == MediaType.VIDEO }
+            MediaFilter.AUDIO -> socialFiltered.filter { it.mediaType == MediaType.AUDIO }
         }
         if (searchQuery.isBlank()) return typeFiltered
         val query = searchQuery.trim().lowercase()

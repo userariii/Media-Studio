@@ -43,7 +43,7 @@ class MediaStoreDataSourceImpl(
         val videoList = mutableListOf<MediaItem>()
         val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
-        val projection = arrayOf(
+        val projectionList = mutableListOf(
             MediaStore.Video.Media._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.TITLE,
@@ -53,8 +53,14 @@ class MediaStoreDataSourceImpl(
             MediaStore.Video.Media.DATE_ADDED,
             MediaStore.Video.Media.DATE_MODIFIED,
             MediaStore.Video.Media.WIDTH,
-            MediaStore.Video.Media.HEIGHT
+            MediaStore.Video.Media.HEIGHT,
+            @Suppress("DEPRECATION")
+            MediaStore.MediaColumns.DATA
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            projectionList.add(MediaStore.MediaColumns.RELATIVE_PATH)
+        }
+        val projection = projectionList.toTypedArray()
 
         val sortOrder = "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
 
@@ -76,6 +82,11 @@ class MediaStoreDataSourceImpl(
                 val dateModifiedColumn = cursor.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
                 val widthColumn = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
                 val heightColumn = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+                @Suppress("DEPRECATION")
+                val dataColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                } else -1
 
                 while (cursor.moveToNext()) {
                     val id = if (idColumn != -1) cursor.getLong(idColumn) else -1L
@@ -95,6 +106,9 @@ class MediaStoreDataSourceImpl(
                     val height = if (heightColumn != -1) cursor.getInt(heightColumn) else 0
                     val resolution = if (width > 0 && height > 0) "${width}x${height}" else null
 
+                    val filePath = if (dataColumn != -1) cursor.getString(dataColumn) else null
+                    val relativePath = if (relativePathColumn != -1) cursor.getString(relativePathColumn) else null
+
                     val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
 
                     videoList.add(
@@ -109,7 +123,10 @@ class MediaStoreDataSourceImpl(
                             dateModified = dateModified,
                             thumbnailUri = contentUri,
                             mediaType = MediaType.VIDEO,
-                            resolution = resolution
+                            resolution = resolution,
+                            displayName = displayName,
+                            relativePath = relativePath,
+                            filePath = filePath
                         )
                     )
                 }
@@ -125,7 +142,7 @@ class MediaStoreDataSourceImpl(
         val audioList = mutableListOf<MediaItem>()
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
 
-        val projection = arrayOf(
+        val projectionList = mutableListOf(
             MediaStore.Audio.Media._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.TITLE,
@@ -136,8 +153,14 @@ class MediaStoreDataSourceImpl(
             MediaStore.Audio.Media.DATE_MODIFIED,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID
+            MediaStore.Audio.Media.ALBUM_ID,
+            @Suppress("DEPRECATION")
+            MediaStore.MediaColumns.DATA
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            projectionList.add(MediaStore.MediaColumns.RELATIVE_PATH)
+        }
+        val projection = projectionList.toTypedArray()
 
         val sortOrder = "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
 
@@ -160,6 +183,11 @@ class MediaStoreDataSourceImpl(
                 val artistColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
                 val albumColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
                 val albumIdColumn = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                @Suppress("DEPRECATION")
+                val dataColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                } else -1
 
                 while (cursor.moveToNext()) {
                     val id = if (idColumn != -1) cursor.getLong(idColumn) else -1L
@@ -179,6 +207,9 @@ class MediaStoreDataSourceImpl(
                     val artist = sanitizeArtist(rawArtist)
                     val album = sanitizeAlbum(rawAlbum)
                     val albumId = if (albumIdColumn != -1) cursor.getLong(albumIdColumn) else -1L
+
+                    val filePath = if (dataColumn != -1) cursor.getString(dataColumn) else null
+                    val relativePath = if (relativePathColumn != -1) cursor.getString(relativePathColumn) else null
 
                     val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
                     val albumArtUri = if (albumId != -1L) {
@@ -201,7 +232,10 @@ class MediaStoreDataSourceImpl(
                             thumbnailUri = albumArtUri,
                             mediaType = MediaType.AUDIO,
                             artist = artist,
-                            album = album
+                            album = album,
+                            displayName = displayName,
+                            relativePath = relativePath,
+                            filePath = filePath
                         )
                     )
                 }

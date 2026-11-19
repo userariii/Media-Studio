@@ -32,7 +32,8 @@ data class MediaUiState(
     val selectedItemKeys: Set<String> = emptySet(),
     val pendingDeleteIntentSender: IntentSender? = null,
     val isSettingsOpen: Boolean = false,
-    val themeMode: ThemeMode = ThemeMode.SYSTEM
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val hideSocialMedia: Boolean = false
 ) {
     fun getItemKey(item: MediaItem): String = "${item.mediaType}_${item.id}"
     fun isItemSelected(item: MediaItem): Boolean = selectedItemKeys.contains(getItemKey(item))
@@ -53,14 +54,31 @@ class MediaViewModel(
                     _uiState.update { it.copy(themeMode = mode) }
                 }
             }
+            viewModelScope.launch {
+                prefs.hideSocialMediaStream.collect { hide ->
+                    _uiState.update { state ->
+                        val newFiltered = repository.filterMedia(
+                            state.allMediaItems,
+                            state.selectedFilter,
+                            state.searchQuery,
+                            hide
+                        )
+                        state.copy(
+                            hideSocialMedia = hide,
+                            filteredMediaItems = newFiltered
+                        )
+                    }
+                }
+            }
         }
 
         viewModelScope.launch {
             repository.mediaStream.collect { items ->
                 val currentFilter = _uiState.value.selectedFilter
                 val currentQuery = _uiState.value.searchQuery
+                val currentHide = _uiState.value.hideSocialMedia
                 _uiState.update { state ->
-                    val filtered = repository.filterMedia(items, currentFilter, currentQuery)
+                    val filtered = repository.filterMedia(items, currentFilter, currentQuery, currentHide)
                     val validKeys = filtered.map { state.getItemKey(it) }.toSet()
                     state.copy(
                         allMediaItems = items,
@@ -87,7 +105,12 @@ class MediaViewModel(
 
     fun setFilter(filter: MediaFilter) {
         _uiState.update { state ->
-            val newFiltered = repository.filterMedia(state.allMediaItems, filter, state.searchQuery)
+            val newFiltered = repository.filterMedia(
+                state.allMediaItems,
+                filter,
+                state.searchQuery,
+                state.hideSocialMedia
+            )
             state.copy(
                 selectedFilter = filter,
                 filteredMediaItems = newFiltered
@@ -97,7 +120,12 @@ class MediaViewModel(
 
     fun setSearchQuery(query: String) {
         _uiState.update { state ->
-            val newFiltered = repository.filterMedia(state.allMediaItems, state.selectedFilter, query)
+            val newFiltered = repository.filterMedia(
+                state.allMediaItems,
+                state.selectedFilter,
+                query,
+                state.hideSocialMedia
+            )
             state.copy(
                 searchQuery = query,
                 filteredMediaItems = newFiltered
@@ -271,6 +299,26 @@ class MediaViewModel(
         preferencesRepository?.let { prefs ->
             viewModelScope.launch {
                 prefs.setThemeMode(mode)
+            }
+        }
+    }
+
+    fun setHideSocialMedia(hide: Boolean) {
+        _uiState.update { state ->
+            val newFiltered = repository.filterMedia(
+                state.allMediaItems,
+                state.selectedFilter,
+                state.searchQuery,
+                hide
+            )
+            state.copy(
+                hideSocialMedia = hide,
+                filteredMediaItems = newFiltered
+            )
+        }
+        preferencesRepository?.let { prefs ->
+            viewModelScope.launch {
+                prefs.setHideSocialMedia(hide)
             }
         }
     }

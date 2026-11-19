@@ -73,7 +73,12 @@ class FakeMediaRepository : MediaRepository {
         return scanMedia(filter)
     }
 
-    override fun filterMedia(items: List<MediaItem>, filter: MediaFilter, searchQuery: String): List<MediaItem> {
+    override fun filterMedia(
+        items: List<MediaItem>,
+        filter: MediaFilter,
+        searchQuery: String,
+        hideSocialMedia: Boolean
+    ): List<MediaItem> {
         val typeFiltered = when (filter) {
             MediaFilter.ALL -> items
             MediaFilter.VIDEO -> items.filter { it.mediaType == MediaType.VIDEO }
