@@ -87,7 +87,9 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.VideoLibrary
+import com.android.multimediastudio.ui.settings.SettingsScreen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -230,10 +232,12 @@ fun MediaDiscoveryScreen(
         keyboardController?.hide()
     }
 
-    BackHandler(enabled = navigator.canNavigateBack() || isPlayerExpanded || uiState.isSelectionMode) {
+    BackHandler(enabled = uiState.isSettingsOpen || navigator.canNavigateBack() || isPlayerExpanded || uiState.isSelectionMode) {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (uiState.isSelectionMode) {
+        if (uiState.isSettingsOpen) {
+            viewModel.closeSettings()
+        } else if (uiState.isSelectionMode) {
             viewModel.exitSelectionMode()
         } else if (isPlayerExpanded) {
             playerViewModel.collapsePlayer()
@@ -255,7 +259,13 @@ fun MediaDiscoveryScreen(
     var playerProgress by remember { mutableFloatStateOf(0f) }
 
     Box(modifier = modifier.fillMaxSize()) {
-        ListDetailPaneScaffold(
+        if (uiState.isSettingsOpen) {
+            SettingsScreen(
+                onBack = { viewModel.closeSettings() },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            ListDetailPaneScaffold(
             directive = scaffoldDirective,
             value = navigator.scaffoldValue,
             listPane = {
@@ -393,6 +403,7 @@ fun MediaDiscoveryScreen(
             )
         }
     }
+}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -546,6 +557,12 @@ fun MediaGalleryPane(
                             Icon(
                                 imageVector = if (uiState.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
                                 contentDescription = if (uiState.isGridView) "Switch to List View" else "Switch to Grid View"
+                            )
+                        }
+                        IconButton(onClick = { viewModel.openSettings() }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = "Settings"
                             )
                         }
                     },

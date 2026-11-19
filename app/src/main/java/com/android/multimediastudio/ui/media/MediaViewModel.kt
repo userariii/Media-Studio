@@ -28,7 +28,8 @@ data class MediaUiState(
     val errorMessage: String? = null,
     val isSelectionMode: Boolean = false,
     val selectedItemKeys: Set<String> = emptySet(),
-    val pendingDeleteIntentSender: IntentSender? = null
+    val pendingDeleteIntentSender: IntentSender? = null,
+    val isSettingsOpen: Boolean = false
 ) {
     fun getItemKey(item: MediaItem): String = "${item.mediaType}_${item.id}"
     fun isItemSelected(item: MediaItem): Boolean = selectedItemKeys.contains(getItemKey(item))
@@ -102,6 +103,14 @@ class MediaViewModel(
         _uiState.update { state ->
             state.copy(selectedMediaItem = item)
         }
+    }
+
+    fun openSettings() {
+        _uiState.update { it.copy(isSettingsOpen = true) }
+    }
+
+    fun closeSettings() {
+        _uiState.update { it.copy(isSettingsOpen = false) }
     }
 
     fun enterSelectionMode(initialItem: MediaItem? = null) {
