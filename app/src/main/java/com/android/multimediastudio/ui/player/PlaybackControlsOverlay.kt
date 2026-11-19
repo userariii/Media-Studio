@@ -697,13 +697,13 @@ fun VideoPlayerContent(
 
                                 IconButton(
                                     onClick = onToggleOrientation,
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(44.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.FullscreenExit,
                                         contentDescription = "Exit Landscape",
                                         tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(30.dp)
                                     )
                                 }
                             }
