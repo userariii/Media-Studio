@@ -179,15 +179,12 @@ fun PlayerScreen(
 
     val handleBack: () -> Unit = onClose
 
-    val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
-
-    DisposableEffect(activity, isVideo, isLightSurface) {
+    DisposableEffect(activity, isLightSurface) {
         val window = activity?.window
         if (window != null) {
             val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            val shouldLightIcons = if (isVideo) false else isLightSurface
-            windowInsetsController.isAppearanceLightStatusBars = shouldLightIcons
-            windowInsetsController.isAppearanceLightNavigationBars = shouldLightIcons
+            windowInsetsController.isAppearanceLightStatusBars = isLightSurface
+            windowInsetsController.isAppearanceLightNavigationBars = isLightSurface
         }
         onDispose {
             val window = activity?.window
