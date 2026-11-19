@@ -7,7 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.android.multimediastudio.data.datasource.DeleteResult
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.ThemeMode
 import com.android.multimediastudio.data.repository.MediaRepository
+import com.android.multimediastudio.data.repository.UserPreferencesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,20 +31,30 @@ data class MediaUiState(
     val isSelectionMode: Boolean = false,
     val selectedItemKeys: Set<String> = emptySet(),
     val pendingDeleteIntentSender: IntentSender? = null,
-    val isSettingsOpen: Boolean = false
+    val isSettingsOpen: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM
 ) {
     fun getItemKey(item: MediaItem): String = "${item.mediaType}_${item.id}"
     fun isItemSelected(item: MediaItem): Boolean = selectedItemKeys.contains(getItemKey(item))
 }
 
 class MediaViewModel(
-    private val repository: MediaRepository
+    private val repository: MediaRepository,
+    private val preferencesRepository: UserPreferencesRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MediaUiState())
     val uiState: StateFlow<MediaUiState> = _uiState.asStateFlow()
 
     init {
+        preferencesRepository?.let { prefs ->
+            viewModelScope.launch {
+                prefs.themeModeStream.collect { mode ->
+                    _uiState.update { it.copy(themeMode = mode) }
+                }
+            }
+        }
+
         viewModelScope.launch {
             repository.mediaStream.collect { items ->
                 val currentFilter = _uiState.value.selectedFilter
@@ -254,12 +266,24 @@ class MediaViewModel(
         refresh()
     }
 
+    fun setThemeMode(mode: ThemeMode) {
+        _uiState.update { it.copy(themeMode = mode) }
+        preferencesRepository?.let { prefs ->
+            viewModelScope.launch {
+                prefs.setThemeMode(mode)
+            }
+        }
+    }
+
     companion object {
-        fun provideFactory(repository: MediaRepository): ViewModelProvider.Factory =
+        fun provideFactory(
+            repository: MediaRepository,
+            preferencesRepository: UserPreferencesRepository? = null
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return MediaViewModel(repository) as T
+                    return MediaViewModel(repository, preferencesRepository) as T
                 }
             }
     }

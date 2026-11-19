@@ -261,6 +261,8 @@ fun MediaDiscoveryScreen(
     Box(modifier = modifier.fillMaxSize()) {
         if (uiState.isSettingsOpen) {
             SettingsScreen(
+                themeMode = uiState.themeMode,
+                onThemeModeSelected = { mode -> viewModel.setThemeMode(mode) },
                 onBack = { viewModel.closeSettings() },
                 modifier = Modifier.fillMaxSize()
             )

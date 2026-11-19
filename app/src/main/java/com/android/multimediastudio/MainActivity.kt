@@ -17,9 +17,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -27,7 +30,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.android.multimediastudio.data.datasource.MediaStoreDataSourceImpl
 import com.android.multimediastudio.data.model.MediaType
+import com.android.multimediastudio.data.model.ThemeMode
 import com.android.multimediastudio.data.repository.MediaRepositoryImpl
+import com.android.multimediastudio.data.repository.UserPreferencesRepository
 import com.android.multimediastudio.ui.media.MediaDiscoveryScreen
 import com.android.multimediastudio.util.VideoThumbnailFetcher
 import com.android.multimediastudio.util.VideoThumbnailKeyer
@@ -44,7 +49,8 @@ class MainActivity : ComponentActivity() {
     private val mediaViewModel: MediaViewModel by viewModels {
         val dataSource = MediaStoreDataSourceImpl(applicationContext)
         val repository = MediaRepositoryImpl(dataSource)
-        MediaViewModel.provideFactory(repository)
+        val prefsRepository = UserPreferencesRepository(applicationContext)
+        MediaViewModel.provideFactory(repository, prefsRepository)
     }
 
     private val playerViewModel: PlayerViewModel by viewModels()
@@ -115,7 +121,14 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MultimediaStudioTheme {
+            val mediaUiState by mediaViewModel.uiState.collectAsState()
+            val darkTheme = when (mediaUiState.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+
+            MultimediaStudioTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
