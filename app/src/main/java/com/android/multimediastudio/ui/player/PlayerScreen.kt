@@ -179,12 +179,15 @@ fun PlayerScreen(
 
     val handleBack: () -> Unit = onClose
 
-    DisposableEffect(activity, isLightSurface) {
+    DisposableEffect(activity, isLightSurface, currentMediaItem.mediaType) {
         val window = activity?.window
         if (window != null) {
             val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            windowInsetsController.isAppearanceLightStatusBars = isLightSurface
-            windowInsetsController.isAppearanceLightNavigationBars = isLightSurface
+            val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
+            
+            // Force status/nav bar icons to be white (light) during video playback since the video background is dark
+            windowInsetsController.isAppearanceLightStatusBars = if (isVideo) false else isLightSurface
+            windowInsetsController.isAppearanceLightNavigationBars = if (isVideo) false else isLightSurface
         }
         onDispose {
             val window = activity?.window
