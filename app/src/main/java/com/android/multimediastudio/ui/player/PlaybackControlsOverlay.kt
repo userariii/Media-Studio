@@ -1208,6 +1208,17 @@ fun VideoPlayerContent(
                 }
             }
 
+            val showControlsInPortrait = !isPortraitVideo || uiState.areControlsVisible
+
+            AnimatedVisibility(
+                visible = isPortraitVideo && uiState.areControlsVisible && !uiState.isScreenLocked,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+            }
+
             // 2. TOP BAR OVERLAY (ALWAYS VISIBLE in Portrait Mode; Hides action buttons when locked)
             Row(
                 modifier = Modifier
@@ -1265,8 +1276,6 @@ fun VideoPlayerContent(
             }
 
             // 3. BOTTOM CONTROLS OVERLAY (Tap-to-hide for Reel/Shorts; Always visible for Landscape videos in Portrait mode)
-            val showControlsInPortrait = !isPortraitVideo || uiState.areControlsVisible
-
             AnimatedVisibility(
                 visible = showControlsInPortrait,
                 enter = fadeIn(),
