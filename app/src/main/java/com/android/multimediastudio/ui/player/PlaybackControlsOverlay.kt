@@ -1154,47 +1154,55 @@ fun VideoPlayerContent(
                 modifier = outerViewportModifier,
                 contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = videoContainerModifier,
-                    contentAlignment = Alignment.Center
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    VideoPlayerSurface(
-                        player = player,
-                        onSurfaceClick = onOverlayClick,
-                        onRewind = onRewind,
-                        onForward = onForward,
-                        isScreenLocked = uiState.isScreenLocked,
-                        enableGestures = true,
-                        externalZoomScale = zoomScale,
-                        externalPanOffset = panOffset,
-                        fillScale = fillScale,
-                        onZoomChanged = { scale, offset ->
-                            zoomScale = scale
-                            panOffset = if (scale <= 1.01f) Offset.Zero else offset
-                            val formattedScale = String.format(Locale.US, "%.1fx", scale)
-                            if (zoomBadgeText != formattedScale) {
-                                zoomBadgeText = formattedScale
-                                zoomBadgeTrigger++
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    Box(
+                        modifier = videoContainerModifier,
+                        contentAlignment = Alignment.Center
+                    ) {
+                        VideoPlayerSurface(
+                            player = player,
+                            onSurfaceClick = onOverlayClick,
+                            onRewind = onRewind,
+                            onForward = onForward,
+                            isScreenLocked = uiState.isScreenLocked,
+                            enableGestures = true,
+                            externalZoomScale = zoomScale,
+                            externalPanOffset = panOffset,
+                            fillScale = fillScale,
+                            onZoomChanged = { scale, offset ->
+                                zoomScale = scale
+                                panOffset = if (scale <= 1.01f) Offset.Zero else offset
+                                val formattedScale = String.format(Locale.US, "%.1fx", scale)
+                                if (zoomBadgeText != formattedScale) {
+                                    zoomBadgeText = formattedScale
+                                    zoomBadgeTrigger++
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
-                    // FULLSCREEN EXPAND BUTTON AT BOTTOM-RIGHT OF VIDEO CONTAINER
+                    // FULLSCREEN EXPAND BUTTON IN BLACK SPACE RIGHT BELOW VIDEO CONTAINER (FAR RIGHT)
                     if (!isPortraitVideo && !uiState.isScreenLocked) {
-                        IconButton(
-                            onClick = onToggleOrientation,
+                        Box(
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .size(40.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.CenterEnd
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Fullscreen,
-                                contentDescription = "Expand to Landscape",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
+                            IconButton(
+                                onClick = onToggleOrientation,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Fullscreen,
+                                    contentDescription = "Expand to Landscape",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     }
                 }
