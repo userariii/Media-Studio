@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.android.multimediastudio.data.model.AppThemeColor
 import com.android.multimediastudio.data.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -15,6 +16,7 @@ class UserPreferencesRepository(private val context: Context) {
 
     private val dataStore = context.applicationContext.dataStore
     private val themeModeKey = stringPreferencesKey("theme_mode")
+    private val appThemeColorKey = stringPreferencesKey("app_theme_color")
     private val hideSocialMediaKey = booleanPreferencesKey("hide_social_media")
 
     private val syncPrefs by lazy {
@@ -27,6 +29,15 @@ class UserPreferencesRepository(private val context: Context) {
             ThemeMode.valueOf(modeStr)
         } catch (_: Exception) {
             ThemeMode.SYSTEM
+        }
+    }
+
+    fun getInitialAppThemeColor(): AppThemeColor {
+        val colorStr = syncPrefs.getString("app_theme_color", null) ?: return AppThemeColor.DEFAULT
+        return try {
+            AppThemeColor.valueOf(colorStr)
+        } catch (_: Exception) {
+            AppThemeColor.DEFAULT
         }
     }
 
@@ -43,6 +54,15 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    val appThemeColorStream: Flow<AppThemeColor> = dataStore.data.map { prefs ->
+        val colorStr = prefs[appThemeColorKey] ?: syncPrefs.getString("app_theme_color", null) ?: AppThemeColor.DEFAULT.name
+        try {
+            AppThemeColor.valueOf(colorStr)
+        } catch (_: Exception) {
+            AppThemeColor.DEFAULT
+        }
+    }
+
     val hideSocialMediaStream: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[hideSocialMediaKey] ?: syncPrefs.getBoolean("hide_social_media", true)
     }
@@ -51,6 +71,13 @@ class UserPreferencesRepository(private val context: Context) {
         syncPrefs.edit().putString("theme_mode", mode.name).apply()
         dataStore.edit { prefs ->
             prefs[themeModeKey] = mode.name
+        }
+    }
+
+    suspend fun setAppThemeColor(color: AppThemeColor) {
+        syncPrefs.edit().putString("app_theme_color", color.name).apply()
+        dataStore.edit { prefs ->
+            prefs[appThemeColorKey] = color.name
         }
     }
 

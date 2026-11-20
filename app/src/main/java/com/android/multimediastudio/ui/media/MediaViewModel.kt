@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.android.multimediastudio.data.datasource.DeleteResult
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.AppThemeColor
 import com.android.multimediastudio.data.model.ThemeMode
 import com.android.multimediastudio.data.repository.MediaRepository
 import com.android.multimediastudio.data.repository.UserPreferencesRepository
@@ -33,6 +34,7 @@ data class MediaUiState(
     val pendingDeleteIntentSender: IntentSender? = null,
     val isSettingsOpen: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val appThemeColor: AppThemeColor = AppThemeColor.DEFAULT,
     val hideSocialMedia: Boolean = true
 ) {
     fun getItemKey(item: MediaItem): String = "${item.mediaType}_${item.id}"
@@ -47,6 +49,7 @@ class MediaViewModel(
     private val _uiState = MutableStateFlow(
         MediaUiState(
             themeMode = preferencesRepository?.getInitialThemeMode() ?: ThemeMode.SYSTEM,
+            appThemeColor = preferencesRepository?.getInitialAppThemeColor() ?: AppThemeColor.DEFAULT,
             hideSocialMedia = preferencesRepository?.getInitialHideSocialMedia() ?: true
         )
     )
@@ -57,6 +60,11 @@ class MediaViewModel(
             viewModelScope.launch {
                 prefs.themeModeStream.collect { mode ->
                     _uiState.update { it.copy(themeMode = mode) }
+                }
+            }
+            viewModelScope.launch {
+                prefs.appThemeColorStream.collect { color ->
+                    _uiState.update { it.copy(appThemeColor = color) }
                 }
             }
             viewModelScope.launch {
@@ -304,6 +312,15 @@ class MediaViewModel(
         preferencesRepository?.let { prefs ->
             viewModelScope.launch {
                 prefs.setThemeMode(mode)
+            }
+        }
+    }
+
+    fun setAppThemeColor(color: AppThemeColor) {
+        _uiState.update { it.copy(appThemeColor = color) }
+        preferencesRepository?.let { prefs ->
+            viewModelScope.launch {
+                prefs.setAppThemeColor(color)
             }
         }
     }

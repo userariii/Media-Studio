@@ -262,7 +262,9 @@ fun MediaDiscoveryScreen(
         if (uiState.isSettingsOpen) {
             SettingsScreen(
                 themeMode = uiState.themeMode,
+                appThemeColor = uiState.appThemeColor,
                 onThemeModeSelected = { mode -> viewModel.setThemeMode(mode) },
+                onAppThemeColorSelected = { color -> viewModel.setAppThemeColor(color) },
                 hideSocialMedia = uiState.hideSocialMedia,
                 onHideSocialMediaChanged = { hide -> viewModel.setHideSocialMedia(hide) },
                 onBack = { viewModel.closeSettings() },

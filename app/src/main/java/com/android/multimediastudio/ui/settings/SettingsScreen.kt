@@ -47,13 +47,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.android.multimediastudio.R
+import com.android.multimediastudio.data.model.AppThemeColor
 import com.android.multimediastudio.data.model.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     themeMode: ThemeMode,
+    appThemeColor: AppThemeColor,
     onThemeModeSelected: (ThemeMode) -> Unit,
+    onAppThemeColorSelected: (AppThemeColor) -> Unit,
     hideSocialMedia: Boolean,
     onHideSocialMediaChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
@@ -144,6 +147,37 @@ fun SettingsScreen(
                             text = "Dark",
                             selected = themeMode == ThemeMode.DARK,
                             onClick = { onThemeModeSelected(ThemeMode.DARK) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = "App Theme Color",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeOptionButton(
+                            text = "Purple",
+                            selected = appThemeColor == AppThemeColor.DEFAULT,
+                            onClick = { onAppThemeColorSelected(AppThemeColor.DEFAULT) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ThemeOptionButton(
+                            text = "Ocean",
+                            selected = appThemeColor == AppThemeColor.OCEAN,
+                            onClick = { onAppThemeColorSelected(AppThemeColor.OCEAN) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ThemeOptionButton(
+                            text = "Forest",
+                            selected = appThemeColor == AppThemeColor.FOREST,
+                            onClick = { onAppThemeColorSelected(AppThemeColor.FOREST) },
                             modifier = Modifier.weight(1f)
                         )
                     }

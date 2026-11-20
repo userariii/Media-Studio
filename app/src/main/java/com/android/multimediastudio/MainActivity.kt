@@ -125,7 +125,10 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.DARK -> true
             }
 
-            MultimediaStudioTheme(darkTheme = darkTheme) {
+            MultimediaStudioTheme(
+                darkTheme = darkTheme,
+                appThemeColor = mediaUiState.appThemeColor
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
