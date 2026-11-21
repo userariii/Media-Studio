@@ -2,6 +2,7 @@ package com.android.multimediastudio.ui.player
 
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,9 +57,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.android.multimediastudio.R
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -214,6 +218,10 @@ fun VideoPlayerSurface(
                 playerView.player = player
                 playerView.keepScreenOn = player?.isPlaying == true
                 playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                // Hide the built-in subtitle view when zoomed so captions
+                // are rendered by the separate overlay that isn't affected by zoom
+                val isZoomed = zoomScale > 1.01f
+                playerView.subtitleView?.visibility = if (isZoomed) View.GONE else View.VISIBLE
             },
             modifier = Modifier
                 .fillMaxSize()
@@ -225,6 +233,43 @@ fun VideoPlayerSurface(
                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                 }
         )
+
+        // Separate subtitle overlay — stays at original size/position when video is zoomed
+        if (zoomScale > 1.01f) {
+            var cueNonce by remember { mutableIntStateOf(0) }
+
+            DisposableEffect(player) {
+                val listener = object : Player.Listener {
+                    override fun onCues(cueGroup: CueGroup) {
+                        cueNonce++
+                    }
+                }
+                player?.addListener(listener)
+                onDispose {
+                    player?.removeListener(listener)
+                }
+            }
+
+            AndroidView(
+                factory = { context ->
+                    val overlay = SubtitleView(context)
+                    overlay.layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                    overlay.setUserDefaultStyle()
+                    overlay.setUserDefaultTextSize()
+                    overlay
+                },
+                update = { subtitleOverlay ->
+                    // Read cueNonce to subscribe to cue changes
+                    cueNonce
+                    val cues = player?.currentCues?.cues ?: emptyList()
+                    subtitleOverlay.setCues(cues)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // DOUBLE-TAP SEEK INDICATOR (-10s / +10s / +20s / +50s)
         if (accumulatedSeekSeconds > 0) {
