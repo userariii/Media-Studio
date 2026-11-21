@@ -3,6 +3,7 @@ package com.android.multimediastudio.ui.player
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.PowerManager
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
@@ -39,6 +40,8 @@ class PlayerViewModel(
 
     private var player: Player? = playerInstance
     private var isSelfManagedPlayer = false
+    private var appContext: Context? = null
+    internal var screenInteractiveChecker: (() -> Boolean)? = null
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -155,6 +158,7 @@ class PlayerViewModel(
      * foreground playback and MediaSession controls.
      */
     fun initializePlayer(context: Context): Player {
+        appContext = context.applicationContext
         val existing = player
         if (existing != null) return existing
 
@@ -272,6 +276,26 @@ class PlayerViewModel(
         }
     }
 
+    private fun isScreenInteractive(): Boolean {
+        screenInteractiveChecker?.let { return it.invoke() }
+        val pm = appContext?.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        return pm?.isInteractive ?: true
+    }
+
+    private fun isTransitionAllowedInCurrentScreenState(fromItem: MediaItem?, toItem: MediaItem): Boolean {
+        if (fromItem == null) return true
+        if (isScreenInteractive()) return true
+
+        val fromType = fromItem.mediaType
+        val toType = toItem.mediaType
+
+        return when {
+            fromType == MediaType.AUDIO && toType == MediaType.VIDEO -> false
+            fromType == MediaType.VIDEO && toType == MediaType.AUDIO -> false
+            else -> true
+        }
+    }
+
     fun playNext() {
         val queue = _uiState.value.mediaQueue
         if (queue.isEmpty()) return
@@ -289,6 +313,19 @@ class PlayerViewModel(
             0
         }
         val nextItem = queue[nextIndex]
+
+        if (!isTransitionAllowedInCurrentScreenState(currentItem, nextItem)) {
+            _uiState.update {
+                it.copy(
+                    isBuffering = false,
+                    isPlaying = false,
+                    hasEnded = true
+                )
+            }
+            pause()
+            return
+        }
+
         playMedia(nextItem, queue)
     }
 
@@ -309,6 +346,19 @@ class PlayerViewModel(
             queue.size - 1
         }
         val prevItem = queue[prevIndex]
+
+        if (!isTransitionAllowedInCurrentScreenState(currentItem, prevItem)) {
+            _uiState.update {
+                it.copy(
+                    isBuffering = false,
+                    isPlaying = false,
+                    hasEnded = true
+                )
+            }
+            pause()
+            return
+        }
+
         playMedia(prevItem, queue)
     }
 

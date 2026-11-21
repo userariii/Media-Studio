@@ -583,4 +583,78 @@ class PlayerViewModelTest {
         )
         assertEquals("Inception (2010)", movieTitle)
     }
+
+    @Test
+    fun screenOff_audioToVideoTransition_isNotAllowed() = runTest {
+        val queue = listOf(sampleAudio, sampleVideo)
+        viewModel.playMedia(sampleAudio, queue)
+        viewModel.play()
+        assertTrue(viewModel.uiState.value.isPlaying)
+
+        // Screen is turned off
+        viewModel.screenInteractiveChecker = { false }
+
+        // Attempting to advance Audio -> Video
+        viewModel.playNext()
+
+        // Should not play video; playback stops
+        assertEquals(sampleAudio, viewModel.uiState.value.currentMediaItem)
+        assertFalse(viewModel.uiState.value.isPlaying)
+        assertTrue(viewModel.uiState.value.hasEnded)
+    }
+
+    @Test
+    fun screenOff_videoToAudioTransition_isNotAllowed() = runTest {
+        val queue = listOf(sampleVideo, sampleAudio)
+        viewModel.playMedia(sampleVideo, queue)
+        viewModel.play()
+        assertTrue(viewModel.uiState.value.isPlaying)
+
+        // Screen is turned off
+        viewModel.screenInteractiveChecker = { false }
+
+        // Attempting to advance Video -> Audio
+        viewModel.playNext()
+
+        // Should not play audio; playback stops
+        assertEquals(sampleVideo, viewModel.uiState.value.currentMediaItem)
+        assertFalse(viewModel.uiState.value.isPlaying)
+        assertTrue(viewModel.uiState.value.hasEnded)
+    }
+
+    @Test
+    fun screenOff_videoToVideoTransition_isAllowed() = runTest {
+        val sampleVideo2 = sampleVideo.copy(id = 888L, title = "Second Video")
+        val queue = listOf(sampleVideo, sampleVideo2)
+        viewModel.playMedia(sampleVideo, queue)
+        viewModel.play()
+        assertTrue(viewModel.uiState.value.isPlaying)
+
+        // Screen is turned off
+        viewModel.screenInteractiveChecker = { false }
+
+        // Attempting to advance Video -> Video
+        viewModel.playNext()
+
+        // Should transition to second video successfully
+        assertEquals(sampleVideo2, viewModel.uiState.value.currentMediaItem)
+    }
+
+    @Test
+    fun screenOff_audioToAudioTransition_isAllowed() = runTest {
+        val sampleAudio2 = sampleAudio.copy(id = 777L, title = "Second Audio")
+        val queue = listOf(sampleAudio, sampleAudio2)
+        viewModel.playMedia(sampleAudio, queue)
+        viewModel.play()
+        assertTrue(viewModel.uiState.value.isPlaying)
+
+        // Screen is turned off
+        viewModel.screenInteractiveChecker = { false }
+
+        // Attempting to advance Audio -> Audio
+        viewModel.playNext()
+
+        // Should transition to second audio successfully
+        assertEquals(sampleAudio2, viewModel.uiState.value.currentMediaItem)
+    }
 }
