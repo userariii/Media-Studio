@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -486,9 +487,11 @@ fun VideoPlayerContent(
                                     val targetVol = (volumeValue * maxVolume).roundToInt().coerceIn(0, maxVolume)
                                     if (targetVol != lastAppliedVol) {
                                         lastAppliedVol = targetVol
-                                        try {
-                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
-                                        } catch (_: Exception) {
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            try {
+                                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                                            } catch (_: Exception) {
+                                            }
                                         }
                                     }
                                     isVolumeVisible = true
@@ -1143,9 +1146,11 @@ fun VideoPlayerContent(
                                     val targetVol = (volumeValue * maxVolume).roundToInt().coerceIn(0, maxVolume)
                                     if (targetVol != lastAppliedVol) {
                                         lastAppliedVol = targetVol
-                                        try {
-                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
-                                        } catch (_: Exception) {
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            try {
+                                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                                            } catch (_: Exception) {
+                                            }
                                         }
                                     }
                                     isVolumeVisible = true
