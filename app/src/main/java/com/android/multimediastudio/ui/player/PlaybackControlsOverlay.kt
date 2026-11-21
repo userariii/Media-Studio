@@ -500,6 +500,8 @@ fun VideoPlayerContent(
                 onForward = onForward,
                 isScreenLocked = uiState.isScreenLocked,
                 enableGestures = false,
+                externalSeekSide = externalSeekSide,
+                externalSeekTrigger = externalSeekTrigger,
                 externalZoomScale = zoomScale,
                 externalPanOffset = Offset.Zero,
                 fillScale = fillScale,
