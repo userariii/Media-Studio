@@ -207,7 +207,7 @@ fun PlayerScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface),
+            .background(if (isVideo && uiState.isLandscape) Color.Black else Color.Transparent),
     ) {
         if (currentMediaItem.mediaType == MediaType.VIDEO) {
             VideoPlayerContent(

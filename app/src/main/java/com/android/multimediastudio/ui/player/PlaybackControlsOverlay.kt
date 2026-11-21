@@ -461,12 +461,7 @@ fun VideoPlayerContent(
                             if (isSwipeToPortrait) {
                                 change.consume()
                                 coroutineScope.launch {
-                                    val rawOffset = offsetY.value + dragAmount
-                                    val newOffset = if (rawOffset < 0f) {
-                                        rawOffset * 0.35f
-                                    } else {
-                                        rawOffset
-                                    }
+                                    val newOffset = (offsetY.value + dragAmount).coerceAtLeast(0f)
                                     offsetY.snapTo(newOffset)
                                 }
                             } else if (isDraggingLeft || isDraggingRight) {
@@ -1123,12 +1118,7 @@ fun VideoPlayerContent(
                             if (isSwipeToMinimize) {
                                 change.consume()
                                 coroutineScope.launch {
-                                    val rawOffset = offsetY.value + dragAmount
-                                    val newOffset = if (rawOffset < 0f) {
-                                        rawOffset * 0.35f
-                                    } else {
-                                        rawOffset
-                                    }
+                                    val newOffset = (offsetY.value + dragAmount).coerceAtLeast(0f)
                                     offsetY.snapTo(newOffset)
                                 }
                             } else if (isDraggingLeft || isDraggingRight) {

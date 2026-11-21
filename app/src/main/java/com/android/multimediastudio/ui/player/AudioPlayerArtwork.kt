@@ -155,13 +155,7 @@ fun AudioPlayerContent(
                         change.consume()
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
                         coroutineScope.launch {
-                            val rawOffset = offsetY.value + dragAmount
-                            // Upper elastic resistance when pulling up (negative offset)
-                            val newOffset = if (rawOffset < 0f) {
-                                rawOffset * 0.35f
-                            } else {
-                                rawOffset
-                            }
+                            val newOffset = (offsetY.value + dragAmount).coerceAtLeast(0f)
                             offsetY.snapTo(newOffset)
                         }
                     },
