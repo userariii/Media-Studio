@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.layout.size
@@ -108,6 +109,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -233,6 +237,8 @@ fun VideoPlayerContent(
     var externalSeekSide by remember { mutableStateOf(SeekSide.NONE) }
     var externalSeekTrigger by remember { mutableLongStateOf(0L) }
     var overlayWidth by remember { mutableIntStateOf(0) }
+    var portraitBoxCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var portraitVideoBounds by remember { mutableStateOf<Rect?>(null) }
 
     val displayPositionMs = if (isUserScrubbing) userScrubPositionMs.toLong() else uiState.currentPositionMs
     val currentPosText = PlayerUiState.formatTime(displayPositionMs)
@@ -336,10 +342,14 @@ fun VideoPlayerContent(
         Box(
             modifier = modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    translationY = offsetY.value
+                }
                 .background(Color.Black)
                 .onSizeChanged {
                     overlayWidth = it.width
                     overlaySize = it
+                    containerHeight = it.height.toFloat()
                 }
                 .pointerInput(uiState.isScreenLocked) {
                     if (uiState.isScreenLocked) return@pointerInput
@@ -407,20 +417,34 @@ fun VideoPlayerContent(
                 }
                 .pointerInput(uiState.isScreenLocked) {
                     if (uiState.isScreenLocked) return@pointerInput
+                    var isSwipeToPortrait = false
                     var isDraggingLeft = false
                     var isDraggingRight = false
 
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
+                            velocityTracker = VelocityTracker()
                             val width = if (overlayWidth > 0) overlayWidth.toFloat() else size.width.toFloat()
-                            isDraggingLeft = offset.x < width * 0.4f
-                            isDraggingRight = offset.x > width * 0.6f
+                            val height = if (containerHeight > 0) containerHeight else size.height.toFloat()
 
-                            if (isDraggingLeft) {
+                            val isTopArea = offset.y < height * 0.18f
+                            val isCenterZone = offset.x >= width * 0.18f && offset.x <= width * 0.82f
+
+                            if (isTopArea || isCenterZone) {
+                                isSwipeToPortrait = true
+                                isDraggingLeft = false
+                                isDraggingRight = false
+                            } else if (offset.x < width * 0.18f) {
+                                isDraggingLeft = true
+                                isDraggingRight = false
+                                isSwipeToPortrait = false
                                 isBrightnessVisible = true
                                 isVolumeVisible = false
                                 lastGestureTime = System.currentTimeMillis()
-                            } else if (isDraggingRight) {
+                            } else {
+                                isDraggingRight = true
+                                isDraggingLeft = false
+                                isSwipeToPortrait = false
                                 val currentVol = try {
                                     audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                                 } catch (_: Exception) {
@@ -434,7 +458,18 @@ fun VideoPlayerContent(
                             }
                         },
                         onVerticalDrag = { change, dragAmount ->
-                            if (isDraggingLeft || isDraggingRight) {
+                            if (isSwipeToPortrait) {
+                                change.consume()
+                                coroutineScope.launch {
+                                    val rawOffset = offsetY.value + dragAmount
+                                    val newOffset = if (rawOffset < 0f) {
+                                        rawOffset * 0.35f
+                                    } else {
+                                        rawOffset
+                                    }
+                                    offsetY.snapTo(newOffset)
+                                }
+                            } else if (isDraggingLeft || isDraggingRight) {
                                 change.consume()
                                 val sensitivity = 0.0028f
                                 val delta = -dragAmount * sensitivity
@@ -467,11 +502,41 @@ fun VideoPlayerContent(
                             }
                         },
                         onDragEnd = {
+                            if (isSwipeToPortrait) {
+                                val velocity = velocityTracker.calculateVelocity().y
+                                coroutineScope.launch {
+                                    if (offsetY.value > collapseThresholdPx || velocity > 400f) {
+                                        onToggleOrientation()
+                                        offsetY.snapTo(0f)
+                                    } else {
+                                        offsetY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(
+                                                durationMillis = 300,
+                                                easing = FastOutSlowInEasing
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            isSwipeToPortrait = false
                             isDraggingLeft = false
                             isDraggingRight = false
                             lastGestureTime = System.currentTimeMillis()
                         },
                         onDragCancel = {
+                            if (isSwipeToPortrait) {
+                                coroutineScope.launch {
+                                    offsetY.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(
+                                            durationMillis = 300,
+                                            easing = FastOutSlowInEasing
+                                        )
+                                    )
+                                }
+                            }
+                            isSwipeToPortrait = false
                             isDraggingLeft = false
                             isDraggingRight = false
                             lastGestureTime = System.currentTimeMillis()
@@ -929,6 +994,9 @@ fun VideoPlayerContent(
         Box(
             modifier = modifier
                 .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    portraitBoxCoordinates = coordinates
+                }
                 .onSizeChanged {
                     overlayWidth = it.width
                     overlaySize = it
@@ -1014,14 +1082,21 @@ fun VideoPlayerContent(
                             val width = if (overlayWidth > 0) overlayWidth.toFloat() else size.width.toFloat()
                             val height = if (containerHeight > 0) containerHeight else size.height.toFloat()
 
-                            val isTopArea = offset.y < height * 0.18f
-                            val isCenterZone = offset.x >= width * 0.35f && offset.x <= width * 0.65f
+                            val videoBounds = portraitVideoBounds
+                            val isWithinVideoVertical = if (videoBounds != null && videoBounds.height > 0f) {
+                                offset.y in videoBounds.top..videoBounds.bottom
+                            } else {
+                                offset.y in (height * 0.18f)..(height * 0.70f)
+                            }
 
-                            if (isTopArea || isCenterZone) {
+                            val isTopArea = offset.y < height * 0.18f
+                            val isCenterZone = offset.x >= width * 0.25f && offset.x <= width * 0.75f
+
+                            if (isTopArea || isCenterZone || !isWithinVideoVertical) {
                                 isSwipeToMinimize = true
                                 isDraggingLeft = false
                                 isDraggingRight = false
-                            } else if (offset.x < width * 0.35f) {
+                            } else if (offset.x < width * 0.25f) {
                                 isDraggingLeft = true
                                 isDraggingRight = false
                                 isSwipeToMinimize = false
@@ -1151,6 +1226,14 @@ fun VideoPlayerContent(
                 .fillMaxWidth()
                 .aspectRatio(videoAspect)
                 .clipToBounds()
+                .onGloballyPositioned { coordinates ->
+                    val rootCoords = portraitBoxCoordinates
+                    portraitVideoBounds = if (rootCoords != null && rootCoords.isAttached && coordinates.isAttached) {
+                        rootCoords.localBoundingBoxOf(coordinates)
+                    } else {
+                        coordinates.boundsInParent()
+                    }
+                }
 
             Box(
                 modifier = outerViewportModifier,
