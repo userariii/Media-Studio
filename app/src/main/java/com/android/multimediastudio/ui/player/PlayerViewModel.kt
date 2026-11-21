@@ -27,11 +27,24 @@ import com.android.multimediastudio.data.model.MediaType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+data class PlayerLayoutState(
+    val isInPipMode: Boolean = false,
+    val isExpanded: Boolean = false,
+    val isLandscape: Boolean = false,
+    val isFullScreen: Boolean = false,
+    val currentMediaItem: MediaItem? = null,
+    val isPlaying: Boolean = false
+)
 
 @OptIn(UnstableApi::class)
 class PlayerViewModel(
@@ -45,6 +58,41 @@ class PlayerViewModel(
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+
+    val playerLayoutState: StateFlow<PlayerLayoutState> = _uiState
+        .map {
+            PlayerLayoutState(
+                isInPipMode = it.isInPipMode,
+                isExpanded = it.isExpanded,
+                isLandscape = it.isLandscape,
+                isFullScreen = it.isFullScreen,
+                currentMediaItem = it.currentMediaItem,
+                isPlaying = it.isPlaying
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            PlayerLayoutState(
+                isInPipMode = _uiState.value.isInPipMode,
+                isExpanded = _uiState.value.isExpanded,
+                isLandscape = _uiState.value.isLandscape,
+                isFullScreen = _uiState.value.isFullScreen,
+                currentMediaItem = _uiState.value.currentMediaItem,
+                isPlaying = _uiState.value.isPlaying
+            )
+        )
+
+    val activeMediaItemId: StateFlow<Long?> = _uiState
+        .map { it.currentMediaItem?.id }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _uiState.value.currentMediaItem?.id)
+
+    val isPlaybackActive: StateFlow<Boolean> = _uiState
+        .map { it.isPlaying }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _uiState.value.isPlaying)
 
     private var positionUpdateJob: Job? = null
 

@@ -55,37 +55,49 @@ object VideoThumbnailCache {
     }
 }
 
+private val thumbnailDecoderDispatcher = Dispatchers.IO.limitedParallelism(3)
+
 class VideoThumbnailFetcher(
     private val context: Context,
     private val data: VideoThumbnailData
 ) : Fetcher {
 
     @Suppress("DEPRECATION")
-    override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
+    override suspend fun fetch(): FetchResult? {
         val cacheKey = data.uri.toString()
 
         val cachedBitmap = VideoThumbnailCache.get(cacheKey)
         if (cachedBitmap != null) {
-            return@withContext DrawableResult(
+            return DrawableResult(
                 drawable = cachedBitmap.toDrawable(context.resources),
                 isSampled = false,
                 dataSource = DataSource.MEMORY
             )
         }
 
-        var bitmap: Bitmap? = null
-
-        // 1. ContentResolver.loadThumbnail (Android 10+ system thumbnail service)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                val loadedBitmap = context.contentResolver.loadThumbnail(data.uri, Size(640, 360), null)
-                if (!isBitmapBlankOrBlack(loadedBitmap)) {
-                    bitmap = loadedBitmap
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "ContentResolver.loadThumbnail unavailable for $cacheKey: ${e.message}")
+        return withContext(thumbnailDecoderDispatcher) {
+            val secondCheck = VideoThumbnailCache.get(cacheKey)
+            if (secondCheck != null) {
+                return@withContext DrawableResult(
+                    drawable = secondCheck.toDrawable(context.resources),
+                    isSampled = false,
+                    dataSource = DataSource.MEMORY
+                )
             }
-        }
+
+            var bitmap: Bitmap? = null
+
+            // 1. ContentResolver.loadThumbnail (Android 10+ system thumbnail service)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val loadedBitmap = context.contentResolver.loadThumbnail(data.uri, Size(512, 288), null)
+                    if (!isBitmapBlankOrBlack(loadedBitmap)) {
+                        bitmap = loadedBitmap
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "ContentResolver.loadThumbnail unavailable for $cacheKey: ${e.message}")
+                }
+            }
 
         // 2. MediaStore.Video.Thumbnails (Legacy Android MediaStore)
         if (bitmap == null) {
@@ -174,15 +186,16 @@ class VideoThumbnailFetcher(
 
         if (bitmap != null && !isBitmapBlankOrBlack(bitmap)) {
             VideoThumbnailCache.put(cacheKey, bitmap)
-            return@withContext DrawableResult(
+            DrawableResult(
                 drawable = bitmap.toDrawable(context.resources),
                 isSampled = false,
                 dataSource = DataSource.DISK
             )
+        } else {
+            null
         }
-
-        null
     }
+}
 
     private suspend fun extractFrameWithCodecAndPixelCopy(
         context: Context,

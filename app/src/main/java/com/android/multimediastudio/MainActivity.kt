@@ -38,6 +38,8 @@ import com.android.multimediastudio.util.VideoThumbnailFetcher
 import com.android.multimediastudio.util.VideoThumbnailKeyer
 import coil.Coil
 import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.android.multimediastudio.ui.media.MediaViewModel
 import com.android.multimediastudio.ui.player.PlayerViewModel
 import com.android.multimediastudio.ui.theme.MultimediaStudioTheme
@@ -85,10 +87,22 @@ class MainActivity : ComponentActivity() {
         }
 
         val imageLoader = ImageLoader.Builder(applicationContext)
+            .memoryCache {
+                MemoryCache.Builder(applicationContext)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(applicationContext.cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(50L * 1024 * 1024)
+                    .build()
+            }
             .components {
                 add(VideoThumbnailFetcher.Factory(applicationContext))
                 add(VideoThumbnailKeyer())
             }
+            .crossfade(false)
             .build()
         Coil.setImageLoader(imageLoader)
 
