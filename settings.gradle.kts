@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Multimedia Studio"
+rootProject.name = "Media Studio"
 include(":app")

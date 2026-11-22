@@ -1837,7 +1837,7 @@ fun PermissionRequiredCard(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Multimedia Studio needs permission to access your audio and video files so you can discover, inspect, and edit local media.",
+                text = "Media Studio needs permission to access your audio and video files so you can discover, inspect, and edit local media.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
             )
