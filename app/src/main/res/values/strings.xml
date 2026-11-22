@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Multimedia Studio</string>
+    <string name="media_playback_channel_name">Media Playback</string>
+    <string name="media_playback_channel_description">Shows playback controls for currently playing media</string>
 </resources>

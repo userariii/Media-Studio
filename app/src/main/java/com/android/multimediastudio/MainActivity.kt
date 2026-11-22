@@ -27,13 +27,16 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import android.content.ContentResolver
 import androidx.lifecycle.repeatOnLifecycle
 import com.android.multimediastudio.data.datasource.MediaStoreDataSourceImpl
+import com.android.multimediastudio.data.model.MediaItem
 import com.android.multimediastudio.data.model.MediaType
 import com.android.multimediastudio.data.model.ThemeMode
 import com.android.multimediastudio.data.repository.MediaRepositoryImpl
 import com.android.multimediastudio.data.repository.UserPreferencesRepository
 import com.android.multimediastudio.ui.media.MediaDiscoveryScreen
+import com.android.multimediastudio.util.ExternalMediaResolver
 import com.android.multimediastudio.util.VideoThumbnailFetcher
 import com.android.multimediastudio.util.VideoThumbnailKeyer
 import coil.Coil
@@ -116,6 +119,10 @@ class MainActivity : ComponentActivity() {
 
         playerViewModel.initializePlayer(applicationContext)
 
+        if (savedInstanceState == null) {
+            handleIncomingIntent(intent)
+        }
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 playerViewModel.uiState.collect { state ->
@@ -158,6 +165,49 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if ((intent == null) || (intent.action != Intent.ACTION_VIEW)) return
+        val uri = intent.data
+            ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            ?: return
+
+        if (ContentResolver.SCHEME_CONTENT.equals(uri.scheme, ignoreCase = true)) {
+            if ((intent.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: SecurityException) {
+                } catch (_: Exception) {}
+            }
+        }
+
+        val mediaItem = ExternalMediaResolver.resolveMediaItem(this, intent) ?: return
+        playExternalMedia(mediaItem)
+    }
+
+    private fun playExternalMedia(mediaItem: MediaItem) {
+        val isLandscapeStage = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        playerViewModel.initializePlayer(applicationContext)
+        playerViewModel.playMedia(
+            mediaItem = mediaItem,
+            queue = listOf(mediaItem),
+            playedFromLandscape = isLandscapeStage
+        )
+        playerViewModel.setMediaQueue(listOf(mediaItem))
+        playerViewModel.expandPlayer()
+        mediaViewModel.selectMediaItem(mediaItem)
+        playerViewModel.play()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && playerViewModel.uiState.value.isLandscape) {
@@ -176,6 +226,11 @@ class MainActivity : ComponentActivity() {
             unregisterReceiver(pipReceiver)
         } catch (_: Exception) {
             // Receiver might not be registered
+        }
+        if (isFinishing && !playerViewModel.uiState.value.isInPipMode) {
+            playerViewModel.pause()
+            val serviceIntent = Intent(applicationContext, PlaybackService::class.java)
+            stopService(serviceIntent)
         }
     }
 

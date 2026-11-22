@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -97,55 +95,9 @@ fun VideoPlayerSurface(
     val currentPanOffset by rememberUpdatedState(panOffset)
     val currentOnZoomChanged by rememberUpdatedState(onZoomChanged)
 
-    var accumulatedSeekSeconds by remember { mutableIntStateOf(0) }
-    var activeSeekSide by remember { mutableStateOf(SeekSide.NONE) }
-    var lastTapTimestamp by remember { mutableLongStateOf(0L) }
-
     LaunchedEffect(player) {
         internalZoomScale = 1.0f
         internalPanOffset = Offset.Zero
-    }
-
-    val triggerRewind = {
-        val now = System.currentTimeMillis()
-        if (accumulatedSeekSeconds > 0 && activeSeekSide == SeekSide.LEFT && (now - lastTapTimestamp) < 800L) {
-            accumulatedSeekSeconds += 10
-        } else {
-            accumulatedSeekSeconds = 10
-            activeSeekSide = SeekSide.LEFT
-        }
-        lastTapTimestamp = now
-        onRewind()
-    }
-
-    val triggerForward = {
-        val now = System.currentTimeMillis()
-        if (accumulatedSeekSeconds > 0 && activeSeekSide == SeekSide.RIGHT && (now - lastTapTimestamp) < 800L) {
-            accumulatedSeekSeconds += 10
-        } else {
-            accumulatedSeekSeconds = 10
-            activeSeekSide = SeekSide.RIGHT
-        }
-        lastTapTimestamp = now
-        onForward()
-    }
-
-    LaunchedEffect(externalSeekTrigger) {
-        if (externalSeekTrigger > 0L) {
-            if (externalSeekSide == SeekSide.LEFT) {
-                triggerRewind()
-            } else if (externalSeekSide == SeekSide.RIGHT) {
-                triggerForward()
-            }
-        }
-    }
-
-    LaunchedEffect(accumulatedSeekSeconds, activeSeekSide, lastTapTimestamp) {
-        if (accumulatedSeekSeconds > 0) {
-            delay(800)
-            accumulatedSeekSeconds = 0
-            activeSeekSide = SeekSide.NONE
-        }
     }
 
     var surfaceModifier = modifier
@@ -164,9 +116,9 @@ fun VideoPlayerSurface(
                         if (isScreenLocked) return@detectTapGestures
                         val isLeft = offset.x < containerSize.width / 2f
                         if (isLeft) {
-                            triggerRewind()
+                            onRewind()
                         } else {
-                            triggerForward()
+                            onForward()
                         }
                     }
                 )
@@ -269,81 +221,6 @@ fun VideoPlayerSurface(
                 },
                 modifier = Modifier.fillMaxSize()
             )
-        }
-
-        // DOUBLE-TAP SEEK INDICATOR (-10s / +10s / +20s / +50s)
-        if (accumulatedSeekSeconds > 0) {
-            Row(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                // LEFT HALF (REWIND) - CENTERED AT 25% SCREEN WIDTH
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (activeSeekSide == SeekSide.LEFT) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.75f)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Replay10,
-                                    contentDescription = "Rewind",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "-${accumulatedSeekSeconds}s",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // RIGHT HALF (FORWARD) - CENTERED AT 75% SCREEN WIDTH
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (activeSeekSide == SeekSide.RIGHT) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.75f)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                            ) {
-                                Text(
-                                    text = "+${accumulatedSeekSeconds}s",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    imageVector = Icons.Rounded.Forward10,
-                                    contentDescription = "Forward",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

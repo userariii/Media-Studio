@@ -106,6 +106,7 @@ data class PlayerUiState(
     val showAudioTrackSheet: Boolean = false,
     val showSubtitleTrackSheet: Boolean = false,
     val showSpeedMenu: Boolean = false,
+    val playedFromLandscape: Boolean = false,
     val interactionNonce: Int = 0
 ) {
     fun getFormattedCurrentPosition(): String = formatTime(currentPositionMs)

@@ -87,6 +87,28 @@ data class MediaItem(
         return false
     }
 
+    fun isReelOrShort(): Boolean {
+        if (mediaType != MediaType.VIDEO) return false
+        val res = resolution
+        if (!res.isNullOrBlank() && res.contains("x")) {
+            val parts = res.split("x")
+            val w = parts.getOrNull(0)?.toIntOrNull() ?: 0
+            val h = parts.getOrNull(1)?.toIntOrNull() ?: 0
+            if (w > 0 && h > 0) {
+                return h > w
+            }
+        }
+        val combined = buildString {
+            append(title).append(" ")
+            displayName?.let { append(it).append(" ") }
+            relativePath?.let { append(it).append(" ") }
+            filePath?.let { append(it).append(" ") }
+        }.lowercase(Locale.ROOT)
+
+        val reelKeywords = listOf("shorts", "short", "reels", "reel", "tiktok", "status", "stories", "story")
+        return reelKeywords.any { combined.contains(it) }
+    }
+
     val formattedDuration: String @JvmName("getFormattedDurationProp") get() = getFormattedDuration()
     val formattedSize: String @JvmName("getFormattedSizeProp") get() = getFormattedSize()
 

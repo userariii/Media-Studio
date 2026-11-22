@@ -144,11 +144,17 @@ class PlayerViewModelTest {
         viewModel.playMedia(sampleVideo)
         viewModel.seekTo(20000L)
 
+        // Hide controls before seeking forward / rewinding
+        viewModel.setControlsVisible(false)
+        assertFalse(viewModel.uiState.value.areControlsVisible)
+
         viewModel.seekForward(10000L)
         assertEquals(30000L, viewModel.uiState.value.currentPositionMs)
+        assertFalse(viewModel.uiState.value.areControlsVisible)
 
         viewModel.seekRewind(10000L)
         assertEquals(20000L, viewModel.uiState.value.currentPositionMs)
+        assertFalse(viewModel.uiState.value.areControlsVisible)
     }
 
     @Test
@@ -213,6 +219,48 @@ class PlayerViewModelTest {
         viewModel.toggleOrientation()
         assertTrue(viewModel.uiState.value.isLandscape)
 
+        viewModel.toggleOrientation()
+        assertFalse(viewModel.uiState.value.isLandscape)
+    }
+
+    @Test
+    fun playMedia_whenPlayedFromLandscape_setsLandscapeAndLocksOrientation() = runTest {
+        viewModel.playMedia(sampleVideo, playedFromLandscape = true)
+        val state = viewModel.uiState.value
+        assertTrue(state.isLandscape)
+        assertTrue(state.playedFromLandscape)
+
+        // Toggling orientation should NOT switch to portrait when played from landscape
+        viewModel.toggleOrientation()
+        assertTrue(viewModel.uiState.value.isLandscape)
+
+        // Collapsing player should retain playedFromLandscape for mini player PIP on landscape gallery
+        viewModel.collapsePlayer()
+        assertTrue(viewModel.uiState.value.playedFromLandscape)
+        assertFalse(viewModel.uiState.value.isLandscape)
+
+        // Clearing active track should reset playedFromLandscape
+        viewModel.clearActiveTrack()
+        assertFalse(viewModel.uiState.value.playedFromLandscape)
+    }
+
+    @Test
+    fun playMedia_whenReelOrShort_alwaysPortraitAndPreventsLandscape() = runTest {
+        val reelVideo = sampleVideo.copy(
+            id = 99L,
+            title = "Awesome Reel #shorts",
+            resolution = "1080x1920"
+        )
+        assertTrue(reelVideo.isReelOrShort())
+
+        // Even if requested playedFromLandscape = true, Reels/Shorts must stay in portrait,
+        // but playedFromLandscape is preserved so orientation is restored when minimized
+        viewModel.playMedia(reelVideo, playedFromLandscape = true)
+        val state = viewModel.uiState.value
+        assertFalse(state.isLandscape)
+        assertTrue(state.playedFromLandscape)
+
+        // Toggling orientation must not switch reel to landscape
         viewModel.toggleOrientation()
         assertFalse(viewModel.uiState.value.isLandscape)
     }
@@ -656,5 +704,42 @@ class PlayerViewModelTest {
 
         // Should transition to second audio successfully
         assertEquals(sampleAudio2, viewModel.uiState.value.currentMediaItem)
+    }
+
+    @Test
+    fun queueNavigator_onSkipNext_and_onSkipPrevious_changesTrack() = runTest {
+        val sampleVideo2 = sampleVideo.copy(id = 888L, title = "Second Video")
+        val sampleAudio2 = sampleAudio.copy(id = 999L, title = "Second Audio")
+        val queue = listOf(sampleVideo, sampleVideo2, sampleAudio, sampleAudio2)
+
+        viewModel.playMedia(sampleVideo, queue)
+        val navigator = PlaybackService.queueNavigator
+        assertTrue("QueueNavigator should be registered", navigator != null)
+        assertTrue(navigator!!.canSkipNext())
+
+        // Test skip next from navigator
+        navigator.onSkipNext()
+        assertEquals("Second Video", viewModel.uiState.value.currentMediaItem?.title)
+
+        navigator.onSkipNext()
+        assertEquals("Test Audio", viewModel.uiState.value.currentMediaItem?.title)
+
+        navigator.onSkipNext()
+        assertEquals("Second Audio", viewModel.uiState.value.currentMediaItem?.title)
+
+        // Test skip previous from navigator
+        navigator.onSkipPrevious()
+        assertEquals("Test Audio", viewModel.uiState.value.currentMediaItem?.title)
+    }
+
+    @Test
+    fun queueNavigator_singleItem_cannotSkipNextWithoutLoop() = runTest {
+        viewModel.playMedia(sampleAudio, listOf(sampleAudio))
+        val navigator = PlaybackService.queueNavigator
+        assertTrue("QueueNavigator should be registered", navigator != null)
+        assertFalse(navigator!!.canSkipNext())
+
+        viewModel.toggleLoopMode() // LoopMode.ONE
+        assertTrue(navigator.canSkipNext())
     }
 }

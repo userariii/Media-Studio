@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
@@ -57,6 +59,8 @@ fun MiniPlayerBar(
     progress: Float = if (durationMs > 0) (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val subtitleText = remember(mediaItem.artist, mediaItem.album) {
         mediaItem.getFormattedSubtitle(includeFolder = false) ?: ""
@@ -71,11 +75,14 @@ fun MiniPlayerBar(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(
+                horizontal = if (isLandscape) 16.dp else 12.dp,
+                vertical = if (isLandscape) 2.dp else 4.dp
+            )
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        shape = RoundedCornerShape(if (isLandscape) 14.dp else 18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
@@ -85,8 +92,8 @@ fun MiniPlayerBar(
                 progress = { effectiveProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.5.dp)
-                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                    .height(2.5.dp)
+                    .clip(RoundedCornerShape(topStart = if (isLandscape) 14.dp else 18.dp, topEnd = if (isLandscape) 14.dp else 18.dp)),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
             )
@@ -94,13 +101,16 @@ fun MiniPlayerBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(
+                        horizontal = 12.dp,
+                        vertical = if (isLandscape) 4.dp else 6.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                    modifier = Modifier.size(46.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    modifier = Modifier.size(if (isLandscape) 38.dp else 42.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -123,15 +133,18 @@ fun MiniPlayerBar(
                                 imageVector = Icons.Rounded.MusicNote,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(if (isLandscape) 20.dp else 22.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(if (isLandscape) 8.dp else 10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     if (isPlaying) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -140,7 +153,7 @@ fun MiniPlayerBar(
                             AnimatedWaveformIcon(
                                 isAnimating = true,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(if (isLandscape) 13.dp else 15.dp)
                             )
                             Text(
                                 text = "Now Playing",
@@ -151,12 +164,12 @@ fun MiniPlayerBar(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(1.dp))
                     }
 
                     Text(
                         text = mediaItem.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        style = (if (isLandscape) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleSmall).copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         modifier = Modifier
@@ -178,12 +191,12 @@ fun MiniPlayerBar(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(if (isLandscape) 8.dp else 10.dp))
 
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(if (isLandscape) 36.dp else 38.dp)
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -195,7 +208,7 @@ fun MiniPlayerBar(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(if (isLandscape) 20.dp else 22.dp)
                         )
                     }
                 }

@@ -117,6 +117,7 @@ class MediaViewModel(
     }
 
     fun setFilter(filter: MediaFilter) {
+        if (_uiState.value.selectedFilter == filter) return
         _uiState.update { state ->
             val newFiltered = repository.filterMedia(
                 state.allMediaItems,

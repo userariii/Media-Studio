@@ -15,9 +15,11 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +36,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,11 +102,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -235,6 +243,42 @@ fun VideoPlayerContent(
     var isUserScrubbing by remember { mutableStateOf(false) }
     var userScrubPositionMs by remember { mutableFloatStateOf(0f) }
 
+    var accumulatedSeekSeconds by remember { mutableIntStateOf(0) }
+    var activeSeekSide by remember { mutableStateOf(SeekSide.NONE) }
+    var lastTapTimestamp by remember { mutableLongStateOf(0L) }
+
+    val handleRewind = {
+        val now = System.currentTimeMillis()
+        if (accumulatedSeekSeconds > 0 && activeSeekSide == SeekSide.LEFT && (now - lastTapTimestamp) < 800L) {
+            accumulatedSeekSeconds += 10
+        } else {
+            accumulatedSeekSeconds = 10
+            activeSeekSide = SeekSide.LEFT
+        }
+        lastTapTimestamp = now
+        onRewind()
+    }
+
+    val handleForward = {
+        val now = System.currentTimeMillis()
+        if (accumulatedSeekSeconds > 0 && activeSeekSide == SeekSide.RIGHT && (now - lastTapTimestamp) < 800L) {
+            accumulatedSeekSeconds += 10
+        } else {
+            accumulatedSeekSeconds = 10
+            activeSeekSide = SeekSide.RIGHT
+        }
+        lastTapTimestamp = now
+        onForward()
+    }
+
+    LaunchedEffect(accumulatedSeekSeconds, activeSeekSide, lastTapTimestamp) {
+        if (accumulatedSeekSeconds > 0) {
+            delay(800)
+            accumulatedSeekSeconds = 0
+            activeSeekSide = SeekSide.NONE
+        }
+    }
+
     var externalSeekSide by remember { mutableStateOf(SeekSide.NONE) }
     var externalSeekTrigger by remember { mutableLongStateOf(0L) }
     var overlayWidth by remember { mutableIntStateOf(0) }
@@ -315,30 +359,26 @@ fun VideoPlayerContent(
         }
     }
 
-    val isPortraitFromMetadata = if (effectiveVideoWidth <= 0f || effectiveVideoHeight <= 0f) {
-        val res = uiState.currentMediaItem?.resolution ?: ""
-        if (res.contains("x")) {
-            val parts = res.split("x")
-            val w = parts.getOrNull(0)?.toFloatOrNull() ?: 0f
-            val h = parts.getOrNull(1)?.toFloatOrNull() ?: 0f
-            h > w && w > 0f
-        } else {
-            false
-        }
-    } else {
-        effectiveVideoHeight > effectiveVideoWidth
-    }
+    val isPortraitFromMetadata = uiState.currentMediaItem?.isReelOrShort() == true
 
-    val isPortraitVideo = isPortraitFromMetadata || (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f && effectiveVideoHeight > effectiveVideoWidth)
+    val isPortraitVideo = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
+        effectiveVideoHeight > effectiveVideoWidth
+    } else {
+        isPortraitFromMetadata
+    }
 
     val videoAspect = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
         val raw = effectiveVideoWidth / effectiveVideoHeight
-        if (isPortraitVideo) raw.coerceIn(0.45f, 0.8f) else raw.coerceIn(1.2f, 2.5f)
+        if (isPortraitVideo) raw.coerceIn(0.3f, 1.0f) else raw.coerceIn(1.0f, 3.0f)
     } else {
         if (isPortraitVideo) 9f / 16f else 16f / 9f
     }
 
-    if (uiState.isLandscape) {
+    val configuration = LocalConfiguration.current
+    val isDeviceLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isLandscapeMode = !isPortraitVideo && (uiState.isLandscape || isDeviceLandscape)
+
+    if (isLandscapeMode) {
         // LANDSCAPE MODE (Full screen video)
         Box(
             modifier = modifier
@@ -407,11 +447,9 @@ fun VideoPlayerContent(
                             val width = if (overlayWidth > 0) overlayWidth else size.width
                             val isLeft = offset.x < width / 2f
                             if (isLeft) {
-                                externalSeekSide = SeekSide.LEFT
-                                externalSeekTrigger = System.currentTimeMillis()
+                                handleRewind()
                             } else {
-                                externalSeekSide = SeekSide.RIGHT
-                                externalSeekTrigger = System.currentTimeMillis()
+                                handleForward()
                             }
                         }
                     )
@@ -432,7 +470,7 @@ fun VideoPlayerContent(
                             val isCenterZone = offset.x >= width * 0.18f && offset.x <= width * 0.82f
 
                             if (isTopArea || isCenterZone) {
-                                isSwipeToPortrait = true
+                                isSwipeToPortrait = !uiState.playedFromLandscape
                                 isDraggingLeft = false
                                 isDraggingRight = false
                             } else if (offset.x < width * 0.18f) {
@@ -459,7 +497,7 @@ fun VideoPlayerContent(
                             }
                         },
                         onVerticalDrag = { change, dragAmount ->
-                            if (isSwipeToPortrait) {
+                            if (isSwipeToPortrait && !uiState.playedFromLandscape) {
                                 change.consume()
                                 coroutineScope.launch {
                                     val newOffset = (offsetY.value + dragAmount).coerceAtLeast(0f)
@@ -500,7 +538,7 @@ fun VideoPlayerContent(
                             }
                         },
                         onDragEnd = {
-                            if (isSwipeToPortrait) {
+                            if (isSwipeToPortrait && !uiState.playedFromLandscape) {
                                 val velocity = velocityTracker.calculateVelocity().y
                                 coroutineScope.launch {
                                     if (offsetY.value > collapseThresholdPx || velocity > 400f) {
@@ -559,8 +597,8 @@ fun VideoPlayerContent(
             VideoPlayerSurface(
                 player = player,
                 onSurfaceClick = onOverlayClick,
-                onRewind = onRewind,
-                onForward = onForward,
+                onRewind = handleRewind,
+                onForward = handleForward,
                 isScreenLocked = uiState.isScreenLocked,
                 enableGestures = false,
                 externalSeekSide = externalSeekSide,
@@ -628,6 +666,7 @@ fun VideoPlayerContent(
                                     )
                                 )
                             )
+                            .windowInsetsPadding(WindowInsets.safeDrawing)
                             .padding(16.dp)
                     ) {
                         // TOP BAR
@@ -783,16 +822,18 @@ fun VideoPlayerContent(
                                     )
                                 }
 
-                                IconButton(
-                                    onClick = onToggleOrientation,
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.FullscreenExit,
-                                        contentDescription = "Exit Landscape",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(30.dp)
-                                    )
+                                if (!uiState.playedFromLandscape) {
+                                    IconButton(
+                                        onClick = onToggleOrientation,
+                                        modifier = Modifier.size(44.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.FullscreenExit,
+                                            contentDescription = "Exit Landscape",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(30.dp)
+                                        )
+                                    }
                                 }
                             }
 
@@ -986,6 +1027,14 @@ fun VideoPlayerContent(
                     )
                 }
             }
+
+            DoubleTapSeekIndicator(
+                accumulatedSeconds = accumulatedSeekSeconds,
+                seekSide = activeSeekSide,
+                isLandscape = true,
+                isReelOrShort = false,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     } else {
         // FULLSCREEN PORTRAIT MODE (100% Screen Video Surface + Overlaid Tap-to-Show Controls)
@@ -1059,11 +1108,9 @@ fun VideoPlayerContent(
                             val width = if (overlayWidth > 0) overlayWidth else size.width
                             val isLeft = offset.x < width / 2f
                             if (isLeft) {
-                                externalSeekSide = SeekSide.LEFT
-                                externalSeekTrigger = System.currentTimeMillis()
+                                handleRewind()
                             } else {
-                                externalSeekSide = SeekSide.RIGHT
-                                externalSeekTrigger = System.currentTimeMillis()
+                                handleForward()
                             }
                         }
                     )
@@ -1209,43 +1256,61 @@ fun VideoPlayerContent(
                 Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
-                    .padding(top = 48.dp, bottom = 68.dp)
+                    .navigationBarsPadding()
+                    .padding(top = 48.dp, bottom = 20.dp)
             } else {
                 Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
+                    .navigationBarsPadding()
                     .padding(top = 48.dp, bottom = 270.dp)
             }
 
-            val videoContainerModifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(videoAspect)
-                .clipToBounds()
-                .onGloballyPositioned { coordinates ->
-                    val rootCoords = portraitBoxCoordinates
-                    portraitVideoBounds = if (rootCoords != null && rootCoords.isAttached && coordinates.isAttached) {
-                        rootCoords.localBoundingBoxOf(coordinates)
-                    } else {
-                        coordinates.boundsInParent()
-                    }
-                }
-
-            Box(
+            BoxWithConstraints(
                 modifier = outerViewportModifier,
                 contentAlignment = Alignment.Center
             ) {
+                val availableWidth = maxWidth
+                val availableHeight = maxHeight
+
+                val videoModifier = if (availableHeight > 0.dp && availableWidth > 0.dp) {
+                    val containerAspect = availableWidth / availableHeight
+                    if (containerAspect > videoAspect) {
+                        Modifier
+                            .height(availableHeight)
+                            .aspectRatio(videoAspect, matchHeightConstraintsFirst = true)
+                    } else {
+                        Modifier
+                            .width(availableWidth)
+                            .aspectRatio(videoAspect, matchHeightConstraintsFirst = false)
+                    }
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(videoAspect)
+                }
+                    .clipToBounds()
+                    .onGloballyPositioned { coordinates ->
+                        val rootCoords = portraitBoxCoordinates
+                        portraitVideoBounds = if (rootCoords != null && rootCoords.isAttached && coordinates.isAttached) {
+                            rootCoords.localBoundingBoxOf(coordinates)
+                        } else {
+                            coordinates.boundsInParent()
+                        }
+                    }
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
-                        modifier = videoContainerModifier,
+                        modifier = videoModifier,
                         contentAlignment = Alignment.Center
                     ) {
                         VideoPlayerSurface(
                             player = player,
                             onSurfaceClick = onOverlayClick,
-                            onRewind = onRewind,
-                            onForward = onForward,
+                            onRewind = handleRewind,
+                            onForward = handleForward,
                             isScreenLocked = uiState.isScreenLocked,
                             enableGestures = true,
                             externalZoomScale = zoomScale,
@@ -1797,6 +1862,23 @@ fun VideoPlayerContent(
                     }
                 }
             }
+
+            val bounds = portraitVideoBounds
+            val indicatorModifier = if (bounds != null && bounds.height > 0f) {
+                Modifier
+                    .fillMaxWidth()
+                    .height(with(density) { bounds.height.toDp() })
+                    .offset(y = with(density) { bounds.top.toDp() })
+            } else {
+                Modifier.fillMaxSize()
+            }
+            DoubleTapSeekIndicator(
+                accumulatedSeconds = accumulatedSeekSeconds,
+                seekSide = activeSeekSide,
+                isLandscape = false,
+                isReelOrShort = isPortraitVideo,
+                modifier = indicatorModifier
+            )
         }
     }
 }
@@ -2018,5 +2100,122 @@ suspend fun PointerInputScope.detectLandscapeVideoTransformGestures(
                 }
             }
         } while (!canceled && event.changes.any { it.pressed })
+    }
+}
+
+@Composable
+fun DoubleTapSeekIndicator(
+    accumulatedSeconds: Int,
+    seekSide: SeekSide,
+    modifier: Modifier = Modifier,
+    isLandscape: Boolean = false,
+    isReelOrShort: Boolean = false
+) {
+    val isVisible = accumulatedSeconds > 0
+    var displayedSeconds by remember { mutableIntStateOf(10) }
+    var displayedSide by remember { mutableStateOf(SeekSide.LEFT) }
+
+    if (isVisible) {
+        displayedSeconds = accumulatedSeconds
+        displayedSide = seekSide
+    }
+
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(animationSpec = tween(150)),
+        exit = fadeOut(animationSpec = tween(250)),
+        modifier = modifier
+    ) {
+        val verticalBias = if (isReelOrShort) -0.3f else 0f
+
+        Row(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // LEFT HALF (REWIND)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentAlignment = if (isLandscape) {
+                    Alignment.CenterStart
+                } else if (isReelOrShort) {
+                    BiasAlignment(0f, verticalBias)
+                } else {
+                    Alignment.Center
+                }
+            ) {
+                if (displayedSide == SeekSide.LEFT) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.85f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        shadowElevation = 6.dp,
+                        modifier = if (isLandscape) Modifier.padding(start = 72.dp) else Modifier
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Replay10,
+                                contentDescription = "Rewind",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "-${displayedSeconds}s",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+
+            // RIGHT HALF (FORWARD)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentAlignment = if (isLandscape) {
+                    Alignment.CenterEnd
+                } else if (isReelOrShort) {
+                    BiasAlignment(0f, verticalBias)
+                } else {
+                    Alignment.Center
+                }
+            ) {
+                if (displayedSide == SeekSide.RIGHT) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.85f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        shadowElevation = 6.dp,
+                        modifier = if (isLandscape) Modifier.padding(end = 72.dp) else Modifier
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = "+${displayedSeconds}s",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.Forward10,
+                                contentDescription = "Forward",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

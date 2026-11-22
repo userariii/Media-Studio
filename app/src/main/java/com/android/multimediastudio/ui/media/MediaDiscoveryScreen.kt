@@ -1,9 +1,17 @@
 package com.android.multimediastudio.ui.media
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -37,6 +45,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,6 +60,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +68,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Clear
@@ -81,6 +95,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.PermMedia
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -101,17 +118,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarDefaults
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import android.content.res.Configuration
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -131,15 +146,21 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -189,6 +210,7 @@ fun MediaDiscoveryScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val playerLayoutState by playerViewModel.playerLayoutState.collectAsState()
+    val playerUiState by playerViewModel.uiState.collectAsState()
 
     if (playerLayoutState.isInPipMode) {
         Box(
@@ -210,13 +232,20 @@ fun MediaDiscoveryScreen(
         return
     }
 
+    val configuration = LocalConfiguration.current
+    val isDeviceLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isCompactHeight = configuration.screenHeightDp < 500
+
     val currentDirective = calculatePaneScaffoldDirective(currentWindowAdaptiveInfoV2())
     val isPlayerExpanded = playerLayoutState.isExpanded || uiState.selectedMediaItem != null
 
     val isPlayerFullOrLandscape = isPlayerExpanded &&
-            (playerLayoutState.isLandscape || playerLayoutState.isFullScreen)
+            (playerLayoutState.isLandscape || playerLayoutState.isFullScreen || isDeviceLandscape)
 
-    val scaffoldDirective = if (isPlayerFullOrLandscape) {
+    // On phones in landscape (compact height) or whenever the player is expanded, use full width (single pane)
+    val shouldForceSinglePane = isPlayerFullOrLandscape || (isDeviceLandscape && isCompactHeight)
+
+    val scaffoldDirective = if (shouldForceSinglePane) {
         currentDirective.copy(maxHorizontalPartitions = 1)
     } else {
         currentDirective
@@ -240,6 +269,10 @@ fun MediaDiscoveryScreen(
         } else if (uiState.isSelectionMode) {
             viewModel.exitSelectionMode()
         } else if (isPlayerExpanded) {
+            val wasInLandscape = playerViewModel.uiState.value.playedFromLandscape
+            if (wasInLandscape) {
+                context.findActivity()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
             playerViewModel.collapsePlayer()
             playerViewModel.setOrientation(false)
             playerViewModel.setFullScreen(false)
@@ -285,7 +318,13 @@ fun MediaDiscoveryScreen(
                             keyboardController?.hide()
                             playerViewModel.initializePlayer(context)
                             if (item.mediaType == MediaType.VIDEO) {
-                                playerViewModel.playMedia(item, viewModel.uiState.value.filteredMediaItems)
+                                val isLandscapeStage = isDeviceLandscape ||
+                                        (context.findActivity()?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                                playerViewModel.playMedia(
+                                    mediaItem = item,
+                                    queue = viewModel.uiState.value.filteredMediaItems,
+                                    playedFromLandscape = isLandscapeStage
+                                )
                                 playerViewModel.setMediaQueue(viewModel.uiState.value.filteredMediaItems)
                                 playerViewModel.expandPlayer()
                                 viewModel.selectMediaItem(item)
@@ -315,10 +354,16 @@ fun MediaDiscoveryScreen(
                     val selectedItem = navigator.currentDestination?.contentKey ?: uiState.selectedMediaItem
                     if (selectedItem != null) {
                         val activeItem = playerLayoutState.currentMediaItem ?: selectedItem
+                        val currentQueue = playerUiState.mediaQueue
+                        val effectiveQueue = when {
+                            uiState.filteredMediaItems.any { it.id == activeItem.id } -> uiState.filteredMediaItems
+                            currentQueue.any { it.id == activeItem.id } -> currentQueue
+                            else -> listOf(activeItem)
+                        }
                         PlayerScreen(
                             mediaItem = activeItem,
                             viewModel = playerViewModel,
-                            mediaQueue = uiState.filteredMediaItems,
+                            mediaQueue = effectiveQueue,
                             onNext = {
                                 playerViewModel.playNext()
                                 playerViewModel.uiState.value.currentMediaItem?.let { newItem ->
@@ -334,6 +379,10 @@ fun MediaDiscoveryScreen(
                             onClose = {
                                 focusManager.clearFocus(force = true)
                                 keyboardController?.hide()
+                                val wasInLandscape = playerViewModel.uiState.value.playedFromLandscape
+                                if (wasInLandscape) {
+                                    context.findActivity()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                }
                                 playerViewModel.collapsePlayer()
                                 playerViewModel.setOrientation(false)
                                 playerViewModel.setFullScreen(false)
@@ -358,10 +407,16 @@ fun MediaDiscoveryScreen(
         val isPlayerFullscreen = playerLayoutState.isExpanded || uiState.selectedMediaItem != null
 
         if (activePlayerItem != null && isPlayerFullscreen && scaffoldDirective.maxHorizontalPartitions == 1) {
+            val currentQueue = playerUiState.mediaQueue
+            val effectiveQueue = when {
+                uiState.filteredMediaItems.any { it.id == activePlayerItem.id } -> uiState.filteredMediaItems
+                currentQueue.any { it.id == activePlayerItem.id } -> currentQueue
+                else -> listOf(activePlayerItem)
+            }
             PlayerScreen(
                 mediaItem = activePlayerItem,
                 viewModel = playerViewModel,
-                mediaQueue = uiState.filteredMediaItems,
+                mediaQueue = effectiveQueue,
                 onNext = {
                     playerViewModel.playNext()
                     playerViewModel.uiState.value.currentMediaItem?.let { newItem ->
@@ -377,6 +432,10 @@ fun MediaDiscoveryScreen(
                 onClose = {
                     focusManager.clearFocus(force = true)
                     keyboardController?.hide()
+                    val wasInLandscape = playerViewModel.uiState.value.playedFromLandscape
+                    if (wasInLandscape) {
+                        context.findActivity()?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
                     playerViewModel.collapsePlayer()
                     playerViewModel.setOrientation(false)
                     playerViewModel.setFullScreen(false)
@@ -395,6 +454,10 @@ fun MediaDiscoveryScreen(
                 mediaItem = activePlayerItem,
                 onExpand = {
                     playerViewModel.expandPlayer()
+                    if (isDeviceLandscape && !activePlayerItem.isReelOrShort()) {
+                        playerViewModel.setOrientation(true)
+                        playerViewModel.setPlayedFromLandscape(true)
+                    }
                     viewModel.selectMediaItem(activePlayerItem)
                 },
                 onClose = {
@@ -462,14 +525,48 @@ fun MediaGalleryPane(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val isDeviceLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     val uiState by viewModel.uiState.collectAsState()
     val activeMediaItemId by playerViewModel.activeMediaItemId.collectAsState()
     val isPlaybackActive by playerViewModel.isPlaybackActive.collectAsState()
+    val playerUiState by playerViewModel.uiState.collectAsState()
+    val isMiniPlayerActive = playerUiState.currentMediaItem != null &&
+            !playerUiState.isExpanded &&
+            playerUiState.currentMediaItem?.mediaType == MediaType.AUDIO
+
+    var isSearchExpanded by rememberSaveable { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    BackHandler(enabled = isSearchExpanded) {
+        isSearchExpanded = false
+        viewModel.setSearchQuery("")
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
+
+    LaunchedEffect(isSearchExpanded) {
+        if (isSearchExpanded) {
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
+    LaunchedEffect(uiState.isSelectionMode) {
+        if (uiState.isSelectionMode) {
+            isSearchExpanded = false
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissionsMap ->
-        val allGranted = permissionsMap.values.all { it }
-        viewModel.onPermissionChanged(allGranted)
+    ) { _ ->
+        val hasMedia = PermissionUtils.hasMediaPermissions(context)
+        viewModel.onPermissionChanged(hasMedia)
     }
 
     val deleteLauncher = rememberLauncherForActivityResult(
@@ -521,6 +618,7 @@ fun MediaGalleryPane(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             if (uiState.isSelectionMode) {
                 TopAppBar(
@@ -572,58 +670,161 @@ fun MediaGalleryPane(
                     )
                 )
             } else {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.PermMedia,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Media Studio",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold
+                Crossfade(
+                    targetState = isSearchExpanded,
+                    label = "TopBarSearchTransition"
+                ) { expanded ->
+                    if (expanded) {
+                        TopAppBar(
+                            navigationIcon = {
+                                IconButton(onClick = {
+                                    isSearchExpanded = false
+                                    viewModel.setSearchQuery("")
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Close Search"
                                     )
+                                }
+                            },
+                            title = {
+                                TextField(
+                                    value = uiState.searchQuery,
+                                    onValueChange = { query -> viewModel.setSearchQuery(query) },
+                                    placeholder = {
+                                        Text(
+                                            text = "Search title, artist, album...",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    },
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        disabledContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        cursorColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(
+                                        onSearch = {
+                                            focusManager.clearFocus(force = true)
+                                            keyboardController?.hide()
+                                        }
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(searchFocusRequester)
                                 )
-                                Text(
-                                    text = "Local Gallery & Player",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { viewModel.toggleLayoutMode() }) {
-                            Icon(
-                                imageVector = if (uiState.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
-                                contentDescription = if (uiState.isGridView) "Switch to List View" else "Switch to Grid View"
+                            },
+                            actions = {
+                                if (uiState.searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = {
+                                        viewModel.setSearchQuery("")
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Clear,
+                                            contentDescription = "Clear Search"
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { viewModel.toggleLayoutMode() }) {
+                                    Icon(
+                                        imageVector = if (uiState.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
+                                        contentDescription = if (uiState.isGridView) "Switch to List View" else "Switch to Grid View"
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.openSettings() }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = "Settings"
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
                             )
-                        }
-                        IconButton(onClick = { viewModel.openSettings() }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = "Settings"
+                        )
+                    } else {
+                        TopAppBar(
+                            title = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PermMedia,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(if (isDeviceLandscape) 22.dp else 28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(if (isDeviceLandscape) 8.dp else 12.dp))
+                                    Column {
+                                        Text(
+                                            text = "Media Studio",
+                                            style = if (isDeviceLandscape) MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold
+                                            ) else MaterialTheme.typography.titleLarge.copy(
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        )
+                                        if (!isDeviceLandscape) {
+                                            Text(
+                                                text = "Local Gallery & Player",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            actions = {
+                                IconButton(onClick = { isSearchExpanded = true }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = "Search"
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.toggleLayoutMode() }) {
+                                    Icon(
+                                        imageVector = if (uiState.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
+                                        contentDescription = if (uiState.isGridView) "Switch to List View" else "Switch to Grid View"
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.openSettings() }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = "Settings"
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
                             )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    )
-                )
+                        )
+                    }
+                }
             }
         },
         bottomBar = {
-            if ((uiState.permissionGranted || !uiState.isPermissionChecked) && !uiState.isSelectionMode) {
-                val bottomBarHeightPx = with(LocalDensity.current) { 120.dp.toPx() }
+            if ((uiState.permissionGranted || !uiState.isPermissionChecked) && !uiState.isSelectionMode && isMiniPlayerActive) {
+                val bottomBarHeightPx = with(LocalDensity.current) { 72.dp.toPx() }
                 Column(
-                    modifier = Modifier.graphicsLayer {
-                        translationY = playerProgress * bottomBarHeightPx
-                    }
+                    modifier = Modifier
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal
+                            )
+                        )
+                        .graphicsLayer {
+                            translationY = playerProgress * bottomBarHeightPx
+                        }
                 ) {
                     GalleryMiniPlayer(
                         playerViewModel = playerViewModel,
@@ -631,20 +832,19 @@ fun MediaGalleryPane(
                             viewModel.selectMediaItem(currentItem)
                         }
                     )
-                    MediaBottomNavigationBar(
-                        selectedFilter = uiState.selectedFilter,
-                        onFilterSelected = { filter -> viewModel.setFilter(filter) }
-                    )
                 }
             }
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp)
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp)
+            ) {
             if (uiState.isPermissionChecked && !uiState.permissionGranted) {
                 val scrollState = rememberScrollState()
                 val pullToRefreshState = rememberPullToRefreshState()
@@ -699,15 +899,6 @@ fun MediaGalleryPane(
                     }
                 }
             } else {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                MediaSearchBar(
-                    query = uiState.searchQuery,
-                    onQueryChanged = { query -> viewModel.setSearchQuery(query) },
-                    isPlayerOpen = uiState.selectedMediaItem != null
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
 
                 val gridState = rememberLazyGridState()
                 val listState = rememberLazyListState()
@@ -811,7 +1002,7 @@ fun MediaGalleryPane(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(bottom = 8.dp),
+                                        .padding(top = 4.dp, bottom = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -828,7 +1019,7 @@ fun MediaGalleryPane(
                                     )
                                 }
 
-                                val onRowItemClick: (MediaItem) -> Unit = remember(uiState.isSelectionMode) {
+                                val onRowItemClick: (MediaItem) -> Unit = remember(uiState.isSelectionMode, onItemClick) {
                                     { item ->
                                         if (uiState.isSelectionMode) {
                                             viewModel.toggleItemSelection(item)
@@ -848,7 +1039,7 @@ fun MediaGalleryPane(
                                     }
                                 }
 
-                                val onRowPlayClick: (MediaItem, Boolean) -> Unit = remember {
+                                val onRowPlayClick: (MediaItem, Boolean) -> Unit = remember(onItemClick) {
                                     { item, isCurrent ->
                                         playerViewModel.initializePlayer(context)
                                         if (item.mediaType == MediaType.AUDIO) {
@@ -875,7 +1066,7 @@ fun MediaGalleryPane(
                                             columns = GridCells.Adaptive(minSize = 150.dp),
                                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
-                                            contentPadding = PaddingValues(bottom = 16.dp),
+                                            contentPadding = PaddingValues(bottom = if (isDeviceLandscape) 64.dp else 80.dp),
                                             modifier = Modifier.fillMaxSize()
                                         ) {
                                             items(
@@ -905,7 +1096,7 @@ fun MediaGalleryPane(
                                         LazyColumn(
                                             state = listState,
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
-                                            contentPadding = PaddingValues(bottom = 16.dp),
+                                            contentPadding = PaddingValues(bottom = if (isDeviceLandscape) 64.dp else 80.dp),
                                             modifier = Modifier.fillMaxSize()
                                         ) {
                                             items(
@@ -939,126 +1130,130 @@ fun MediaGalleryPane(
                 }
             }
         }
-    }
-}
 
-@Composable
-fun MediaSearchBar(
-    query: String,
-    onQueryChanged: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    isPlayerOpen: Boolean = false
-) {
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
+            if ((uiState.permissionGranted || !uiState.isPermissionChecked) && !uiState.isSelectionMode) {
+                val targetPillBottom = if (isMiniPlayerActive) {
+                    innerPadding.calculateBottomPadding() + if (isDeviceLandscape) 6.dp else 10.dp
+                } else {
+                    innerPadding.calculateBottomPadding() + if (isDeviceLandscape) 12.dp else 20.dp
+                }
+                val animatedPillBottom by animateDpAsState(
+                    targetValue = targetPillBottom,
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    label = "PillBottomAnimation"
+                )
 
-    LaunchedEffect(Unit) {
-        focusManager.clearFocus(force = true)
-        keyboardController?.hide()
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            focusManager.clearFocus(force = true)
-            keyboardController?.hide()
+                FloatingMediaFilterBar(
+                    selectedFilter = uiState.selectedFilter,
+                    onFilterSelected = { filter -> viewModel.setFilter(filter) },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = animatedPillBottom)
+                )
+            }
         }
     }
-
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChanged,
-        modifier = modifier
-            .fillMaxWidth()
-            .focusProperties {
-                canFocus = !isPlayerOpen
-            },
-        placeholder = {
-            Text(
-                text = "Search title, artist, album...",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Rounded.Search,
-                contentDescription = "Search Icon"
-            )
-        },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = {
-                    onQueryChanged("")
-                    focusManager.clearFocus(force = true)
-                    keyboardController?.hide()
-                }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Clear,
-                        contentDescription = "Clear Search"
-                    )
-                }
-            }
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(
-            onSearch = {
-                focusManager.clearFocus(force = true)
-                keyboardController?.hide()
-            }
-        ),
-        singleLine = true,
-        shape = RoundedCornerShape(28.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    )
 }
 
 @Composable
-fun MediaBottomNavigationBar(
+fun FloatingMediaFilterBar(
     selectedFilter: MediaFilter,
     onFilterSelected: (MediaFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    NavigationBar(
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        windowInsets = NavigationBarDefaults.windowInsets
+    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val pillBackgroundColor = if (isDarkTheme) Color(0xFF131315) else Color.White
+    val borderColor = if (isDarkTheme) Color.White.copy(alpha = 0.32f) else Color.Black.copy(alpha = 0.18f)
+
+    Surface(
+        shape = CircleShape,
+        color = pillBackgroundColor,
+        border = BorderStroke(1.dp, borderColor),
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp,
+        modifier = modifier
     ) {
-        NavigationBarItem(
-            selected = selectedFilter == MediaFilter.ALL,
-            onClick = { onFilterSelected(MediaFilter.ALL) },
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.PermMedia,
-                    contentDescription = "All Media"
-                )
-            },
-            label = { Text("All Media") }
-        )
-        NavigationBarItem(
-            selected = selectedFilter == MediaFilter.VIDEO,
-            onClick = { onFilterSelected(MediaFilter.VIDEO) },
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.VideoLibrary,
-                    contentDescription = "Videos"
-                )
-            },
-            label = { Text("Videos") }
-        )
-        NavigationBarItem(
-            selected = selectedFilter == MediaFilter.AUDIO,
-            onClick = { onFilterSelected(MediaFilter.AUDIO) },
-            icon = {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
-                    contentDescription = "Audio"
-                )
-            },
-            label = { Text("Audio") }
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FloatingFilterItem(
+                selected = selectedFilter == MediaFilter.ALL,
+                onClick = { onFilterSelected(MediaFilter.ALL) },
+                icon = Icons.Rounded.PermMedia,
+                label = "All",
+                contentDescription = "All Media",
+                isDarkTheme = isDarkTheme
+            )
+            FloatingFilterItem(
+                selected = selectedFilter == MediaFilter.VIDEO,
+                onClick = { onFilterSelected(MediaFilter.VIDEO) },
+                icon = Icons.Rounded.VideoLibrary,
+                label = "Videos",
+                contentDescription = "Videos",
+                isDarkTheme = isDarkTheme
+            )
+            FloatingFilterItem(
+                selected = selectedFilter == MediaFilter.AUDIO,
+                onClick = { onFilterSelected(MediaFilter.AUDIO) },
+                icon = Icons.AutoMirrored.Rounded.VolumeUp,
+                label = "Audio",
+                contentDescription = "Audio",
+                isDarkTheme = isDarkTheme
+            )
+        }
+    }
+}
+
+@Composable
+private fun FloatingFilterItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: ImageVector,
+    label: String,
+    contentDescription: String,
+    isDarkTheme: Boolean = true
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(durationMillis = 150),
+        label = "FloatingFilterBg"
+    )
+    val unselectedColor = if (isDarkTheme) Color.White.copy(alpha = 0.72f) else Color.Black.copy(alpha = 0.7f)
+    val contentTint by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else unselectedColor,
+        animationSpec = tween(durationMillis = 150),
+        label = "FloatingFilterTint"
+    )
+
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = contentTint,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                ),
+                color = contentTint,
+                maxLines = 1
+            )
+        }
     }
 }
 

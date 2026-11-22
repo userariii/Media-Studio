@@ -4,8 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
+import android.util.Log
 import androidx.annotation.OptIn
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -201,6 +201,29 @@ class PlayerViewModel(
         player?.currentTracks?.let { updateTracksFromPlayer(it) }
     }
 
+    @OptIn(UnstableApi::class)
+    fun isPlayerAlive(p: Player? = player): Boolean {
+        if (p == null) return false
+        return if (p is ExoPlayer) {
+            try {
+                p.playbackLooper.thread.isAlive && p.applicationLooper.thread.isAlive
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            true
+        }
+    }
+
+    fun ensurePlayer(context: Context? = null): Player? {
+        val current = player
+        if (current != null && isPlayerAlive(current)) {
+            return current
+        }
+        val ctx = context ?: appContext ?: return null
+        return initializePlayer(ctx)
+    }
+
     /**
      * Initializes the player with PlaybackService / ExoPlayer configured for
      * foreground playback and MediaSession controls.
@@ -208,7 +231,13 @@ class PlayerViewModel(
     fun initializePlayer(context: Context): Player {
         appContext = context.applicationContext
         val existing = player
-        if (existing != null) return existing
+        if (existing != null && isPlayerAlive(existing)) return existing
+        if (existing != null) {
+            try {
+                existing.removeListener(playerListener)
+            } catch (_: Exception) {}
+            player = null
+        }
 
         startPlaybackService(context)
 
@@ -229,6 +258,8 @@ class PlayerViewModel(
         this.player = exoPlayer
         this.isSelfManagedPlayer = false
 
+        setupQueueNavigator()
+
         // If media item was set before player initialization, load it
         val currentItem = _uiState.value.currentMediaItem
         if (currentItem != null) {
@@ -241,23 +272,58 @@ class PlayerViewModel(
     private fun startPlaybackService(context: Context) {
         try {
             val intent = Intent(context.applicationContext, PlaybackService::class.java)
-            ContextCompat.startForegroundService(context.applicationContext, intent)
+            context.applicationContext.startService(intent)
         } catch (_: SecurityException) {
-            // Security / permission exception starting foreground service
+            // Security / permission exception starting service
         } catch (_: IllegalStateException) {
-            // Catches ForegroundServiceStartNotAllowedException on Android 12+ or illegal service state
+            // Catches background start restrictions if any
         } catch (_: Exception) {
             // General defensive exception catch so app never crashes
         }
     }
 
-    fun getPlayer(): Player? = player
+    private fun setupQueueNavigator() {
+        PlaybackService.queueNavigator = object : PlaybackService.QueueNavigator {
+            override fun onSkipNext() {
+                playNext()
+            }
+
+            override fun onSkipPrevious() {
+                playPrevious()
+            }
+
+            override fun canSkipNext(): Boolean {
+                val queue = _uiState.value.mediaQueue
+                val loopMode = _uiState.value.loopMode
+                return queue.size > 1 || loopMode != LoopMode.OFF
+            }
+
+            override fun canSkipPrevious(): Boolean {
+                val queue = _uiState.value.mediaQueue
+                return queue.size > 1 || (_uiState.value.currentPositionMs > 3000L)
+            }
+        }
+    }
+
+    fun getPlayer(): Player? {
+        val p = player
+        if (p != null && isPlayerAlive(p)) {
+            return p
+        }
+        return appContext?.let { initializePlayer(it) } ?: player
+    }
 
     fun setMediaQueue(queue: List<MediaItem>) {
         _uiState.update { it.copy(mediaQueue = queue) }
+        setupQueueNavigator()
     }
 
-    fun playMedia(mediaItem: MediaItem, queue: List<MediaItem> = emptyList()) {
+    fun playMedia(
+        mediaItem: MediaItem,
+        queue: List<MediaItem> = emptyList(),
+        playedFromLandscape: Boolean? = null
+    ) {
+        setupQueueNavigator()
         val currentQueue = _uiState.value.mediaQueue
         val updatedQueue = when {
             queue.isNotEmpty() -> queue
@@ -278,10 +344,20 @@ class PlayerViewModel(
             return
         }
 
+        val effectivePlayedFromLandscape = playedFromLandscape ?: _uiState.value.playedFromLandscape
         val wasLandscape = _uiState.value.isLandscape
         val isTargetVideo = mediaItem.mediaType == MediaType.VIDEO
-        val newLandscape = if (isTargetVideo) wasLandscape else false
-        val newFullScreen = if (isTargetVideo) _uiState.value.isFullScreen else false
+        val isReel = isTargetVideo && mediaItem.isReelOrShort()
+        val newLandscape = if (isReel) {
+            false
+        } else if (effectivePlayedFromLandscape) {
+            true
+        } else if (isTargetVideo) {
+            wasLandscape
+        } else {
+            false
+        }
+        val newFullScreen = if (isTargetVideo && !isReel) _uiState.value.isFullScreen else false
 
         _uiState.update {
             it.copy(
@@ -294,11 +370,13 @@ class PlayerViewModel(
                 isLandscape = newLandscape,
                 isFullScreen = newFullScreen,
                 isScreenLocked = false,
-                isExpanded = it.isExpanded
+                isExpanded = it.isExpanded,
+                playedFromLandscape = effectivePlayedFromLandscape
             )
         }
 
-        player?.let { p ->
+        val p = ensurePlayer()
+        if (p != null) {
             val uri = mediaItem.contentUri
             if (uri != null) {
                 val metadata = MediaMetadata.Builder()
@@ -316,10 +394,22 @@ class PlayerViewModel(
                     .setMediaMetadata(metadata)
                     .build()
 
-                p.setMediaItem(media3Item)
-                p.setPlaybackSpeed(_uiState.value.playbackSpeed)
-                p.prepare()
-                p.playWhenReady = true
+                try {
+                    p.setMediaItem(media3Item)
+                    p.setPlaybackSpeed(_uiState.value.playbackSpeed)
+                    p.prepare()
+                    p.playWhenReady = true
+                } catch (e: Exception) {
+                    Log.w("PlayerViewModel", "Error in playMedia, recreating player", e)
+                    appContext?.let { ctx ->
+                        player = null
+                        val freshPlayer = initializePlayer(ctx)
+                        freshPlayer.setMediaItem(media3Item)
+                        freshPlayer.setPlaybackSpeed(_uiState.value.playbackSpeed)
+                        freshPlayer.prepare()
+                        freshPlayer.playWhenReady = true
+                    }
+                }
             }
         }
     }
@@ -374,7 +464,11 @@ class PlayerViewModel(
             return
         }
 
-        playMedia(nextItem, queue)
+        playMedia(
+            mediaItem = nextItem,
+            queue = queue,
+            playedFromLandscape = _uiState.value.playedFromLandscape
+        )
     }
 
     fun playPrevious() {
@@ -407,7 +501,11 @@ class PlayerViewModel(
             return
         }
 
-        playMedia(prevItem, queue)
+        playMedia(
+            mediaItem = prevItem,
+            queue = queue,
+            playedFromLandscape = _uiState.value.playedFromLandscape
+        )
     }
 
     fun touchControls() {
@@ -433,12 +531,23 @@ class PlayerViewModel(
     }
 
     fun play() {
-        player?.play()
+        val p = ensurePlayer()
+        try {
+            p?.play()
+        } catch (e: Exception) {
+            Log.w("PlayerViewModel", "Error in play, recreating player", e)
+            appContext?.let { ctx ->
+                player = null
+                initializePlayer(ctx).play()
+            }
+        }
         _uiState.update { it.copy(isPlaying = true) }
     }
 
     fun pause() {
-        player?.pause()
+        try {
+            player?.pause()
+        } catch (_: Exception) {}
         _uiState.update { it.copy(isPlaying = false) }
         stopPositionTracker()
         updatePositionFromPlayer()
@@ -456,26 +565,45 @@ class PlayerViewModel(
         }
     }
 
-    fun seekTo(positionMs: Long) {
-        touchControls()
+    fun seekTo(positionMs: Long, showControls: Boolean = true) {
+        if (showControls) {
+            touchControls()
+        }
         val duration = _uiState.value.durationMs
         val targetPos = if (duration > 0) {
             positionMs.coerceIn(0L, duration)
         } else {
             positionMs.coerceAtLeast(0L)
         }
-        player?.seekTo(targetPos)
-        _uiState.update { it.copy(currentPositionMs = targetPos) }
+        val p = ensurePlayer()
+        try {
+            p?.seekTo(targetPos)
+        } catch (e: Exception) {
+            Log.w("PlayerViewModel", "Error in seekTo, recreating player", e)
+            appContext?.let { ctx ->
+                player = null
+                val freshPlayer = initializePlayer(ctx)
+                try {
+                    freshPlayer.seekTo(targetPos)
+                } catch (_: Exception) {}
+            }
+        }
+        _uiState.update {
+            it.copy(
+                currentPositionMs = targetPos,
+                interactionNonce = if (it.areControlsVisible) it.interactionNonce + 1 else it.interactionNonce
+            )
+        }
     }
 
-    fun seekForward(deltaMs: Long = 10000L) {
+    fun seekForward(deltaMs: Long = 10000L, showControls: Boolean = false) {
         val current = player?.currentPosition ?: _uiState.value.currentPositionMs
-        seekTo(current + deltaMs)
+        seekTo(current + deltaMs, showControls = showControls)
     }
 
-    fun seekRewind(deltaMs: Long = 10000L) {
+    fun seekRewind(deltaMs: Long = 10000L, showControls: Boolean = false) {
         val current = player?.currentPosition ?: _uiState.value.currentPositionMs
-        seekTo(current - deltaMs)
+        seekTo(current - deltaMs, showControls = showControls)
     }
 
     fun setPlaybackSpeed(speed: Float) {
@@ -521,12 +649,19 @@ class PlayerViewModel(
     }
 
     fun toggleOrientation() {
+        if (_uiState.value.currentMediaItem?.isReelOrShort() == true) return
+        if (_uiState.value.playedFromLandscape) return
         touchControls()
         _uiState.update { it.copy(isLandscape = !it.isLandscape) }
     }
 
     fun setOrientation(landscape: Boolean) {
+        if (landscape && _uiState.value.currentMediaItem?.isReelOrShort() == true) return
         _uiState.update { it.copy(isLandscape = landscape) }
+    }
+
+    fun setPlayedFromLandscape(playedFromLandscape: Boolean) {
+        _uiState.update { it.copy(playedFromLandscape = playedFromLandscape) }
     }
 
     fun setInPipMode(inPip: Boolean) {
@@ -543,7 +678,14 @@ class PlayerViewModel(
     }
 
     fun collapsePlayer() {
-        _uiState.update { it.copy(isExpanded = false) }
+        _uiState.update {
+            it.copy(
+                isExpanded = false,
+                isFullScreen = false,
+                isLandscape = false,
+                isScreenLocked = false
+            )
+        }
     }
 
     fun togglePlayerExpansion() {
@@ -559,7 +701,8 @@ class PlayerViewModel(
                 isExpanded = false,
                 isPlaying = false,
                 currentPositionMs = 0L,
-                durationMs = 0L
+                durationMs = 0L,
+                playedFromLandscape = false
             )
         }
     }
@@ -729,6 +872,7 @@ class PlayerViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        PlaybackService.queueNavigator = null
         releasePlayer()
     }
 
@@ -748,7 +892,9 @@ class PlayerViewModel(
     }
 
     private fun updatePositionFromPlayer() {
-        player?.let { p ->
+        val p = player ?: return
+        if (!isPlayerAlive(p)) return
+        try {
             val pos = p.currentPosition.coerceAtLeast(0L)
             val dur = p.duration.coerceAtLeast(0L)
             _uiState.update { state ->
@@ -757,7 +903,7 @@ class PlayerViewModel(
                     durationMs = if (dur > 0) dur else state.durationMs
                 )
             }
-        }
+        } catch (_: Exception) {}
     }
 
     companion object {

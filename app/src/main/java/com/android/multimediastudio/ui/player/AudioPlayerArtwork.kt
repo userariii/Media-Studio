@@ -13,6 +13,10 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +29,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -79,6 +86,66 @@ import coil.request.ImageRequest
 import com.android.multimediastudio.data.model.MediaItem
 import kotlinx.coroutines.launch
 
+@Composable
+private fun AudioArtworkCard(
+    mediaItem: MediaItem,
+    scalePulse: Float,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Card(
+        modifier = modifier.scale(scalePulse),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (mediaItem.thumbnailUri != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(mediaItem.thumbnailUri)
+                        .crossfade(enable = true)
+                        .build(),
+                    contentDescription = mediaItem.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.colorScheme.tertiaryContainer,
+                                ),
+                            ),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                        modifier = Modifier.size(72.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(40.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioPlayerContent(
@@ -97,6 +164,8 @@ fun AudioPlayerContent(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val density = LocalDensity.current
     val collapseThresholdPx = with(density) { 120.dp.toPx() }
     val coroutineScope = rememberCoroutineScope()
@@ -196,7 +265,7 @@ fun AudioPlayerContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding(),
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
             // 1. TOP BAR FOR AUDIO PLAYER: Minimize & Now Playing
             Row(
@@ -240,70 +309,197 @@ fun AudioPlayerContent(
                 Spacer(modifier = Modifier.size(48.dp))
             }
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 24.dp),
-            ) {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 2. CLEAN ALBUM ARTWORK CARD (No overlay controls)
-                Card(
+            if (isLandscape) {
+                Row(
                     modifier = Modifier
-                        .fillMaxWidth(0.75f)
-                        .aspectRatio(1f)
-                        .scale(scalePulse),
-                    shape = RoundedCornerShape(28.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 24.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(0.42f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (mediaItem.thumbnailUri != null) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(mediaItem.thumbnailUri)
-                                    .crossfade(enable = true)
-                                    .build(),
-                                contentDescription = mediaItem.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
+                        AudioArtworkCard(
+                            mediaItem = mediaItem,
+                            scalePulse = scalePulse,
+                            modifier = Modifier
+                                .sizeIn(maxWidth = 180.dp, maxHeight = 180.dp)
+                                .aspectRatio(1f)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(0.58f)
+                            .fillMaxHeight()
+                            .padding(start = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = mediaItem.title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .basicMarquee(iterations = Int.MAX_VALUE, spacing = MarqueeSpacing(24.dp)),
+                        )
+
+                        if (!subtitleText.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = subtitleText,
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        brush = Brush.linearGradient(
-                                            colors = listOf(
-                                                MaterialTheme.colorScheme.primaryContainer,
-                                                MaterialTheme.colorScheme.tertiaryContainer,
-                                            ),
-                                        ),
-                                    ),
-                                contentAlignment = Alignment.Center,
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Slider(
+                            value = if (isUserScrubbing) userScrubPositionMs else uiState.currentPositionMs.toFloat(),
+                            onValueChange = { newValue ->
+                                isUserScrubbing = true
+                                userScrubPositionMs = newValue
+                            },
+                            onValueChangeFinished = {
+                                isUserScrubbing = false
+                                onSeek(userScrubPositionMs.toLong())
+                            },
+                            valueRange = 0f..(uiState.durationMs.toFloat().coerceAtLeast(1f)),
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = currentPosText,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = durationText,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onClick = onToggleShuffle, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Shuffle,
+                                    contentDescription = if (uiState.isShuffleModeEnabled) "Shuffle On" else "Shuffle Off",
+                                    tint = if (uiState.isShuffleModeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+
+                            IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.SkipPrevious,
+                                    contentDescription = "Previous Track",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(30.dp),
+                                )
+                            }
+
+                            Surface(
+                                onClick = onPlayPauseToggle,
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(52.dp),
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
-                                    modifier = Modifier.size(96.dp),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (uiState.isBuffering) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.5.dp,
+                                        )
+                                    } else {
                                         Icon(
-                                            imageVector = Icons.Rounded.MusicNote,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.size(52.dp),
+                                            imageVector = if (uiState.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(34.dp),
                                         )
                                     }
                                 }
                             }
+
+                            IconButton(onClick = onNext, modifier = Modifier.size(40.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.SkipNext,
+                                    contentDescription = "Next Track",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(30.dp),
+                                )
+                            }
+
+                            val (repeatIcon, repeatTint, repeatDesc) = when (uiState.loopMode) {
+                                LoopMode.OFF -> Triple(Icons.Rounded.Repeat, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), "Loop Off")
+                                LoopMode.ALL -> Triple(Icons.Rounded.Repeat, MaterialTheme.colorScheme.primary, "Loop All")
+                                LoopMode.ONE -> Triple(Icons.Rounded.RepeatOne, MaterialTheme.colorScheme.primary, "Loop One")
+                            }
+                            IconButton(onClick = onToggleLoop, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    imageVector = repeatIcon,
+                                    contentDescription = repeatDesc,
+                                    tint = repeatTint,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+
+                            PlaybackSpeedSelector(
+                                currentSpeed = uiState.playbackSpeed,
+                                onSpeedSelected = onSpeedSelected,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
                         }
                     }
                 }
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 24.dp),
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    AudioArtworkCard(
+                        mediaItem = mediaItem,
+                        scalePulse = scalePulse,
+                        modifier = Modifier
+                            .fillMaxWidth(0.75f)
+                            .aspectRatio(1f)
+                    )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -540,4 +736,5 @@ fun AudioPlayerContent(
             }
         }
     }
+}
 }

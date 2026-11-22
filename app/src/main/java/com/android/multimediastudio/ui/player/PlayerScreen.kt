@@ -4,9 +4,11 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -58,10 +61,13 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
+    val configuration = LocalConfiguration.current
+    val isDeviceLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val uiState by viewModel.uiState.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val snackbarHostState = remember { SnackbarHostState() }
     val currentMediaItem = uiState.currentMediaItem ?: mediaItem
+    val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
 
     LaunchedEffect(mediaItem, mediaQueue) {
         viewModel.initializePlayer(context)
@@ -69,7 +75,11 @@ fun PlayerScreen(
             viewModel.setMediaQueue(mediaQueue)
         }
         if (uiState.currentMediaItem?.id != mediaItem.id) {
-            viewModel.playMedia(mediaItem, mediaQueue)
+            viewModel.playMedia(
+                mediaItem = mediaItem,
+                queue = mediaQueue,
+                playedFromLandscape = uiState.playedFromLandscape || isDeviceLandscape
+            )
         }
     }
 
@@ -112,20 +122,35 @@ fun PlayerScreen(
         }
     }
 
+    val isReelOrShort = isVideo && currentMediaItem.isReelOrShort()
+    val isLandscape = !isReelOrShort && (uiState.isLandscape || isDeviceLandscape)
+    val wasPlayedFromLandscape = remember(currentMediaItem.id) { uiState.playedFromLandscape }
+    val currentPlayedFromLandscape by rememberUpdatedState(uiState.playedFromLandscape || wasPlayedFromLandscape)
+
     // Handle landscape orientation toggling and immersive fullscreen mode
-    DisposableEffect(uiState.isLandscape, activity, isDarkTheme) {
+    DisposableEffect(uiState.isLandscape, isDeviceLandscape, activity, isDarkTheme, isVideo, isReelOrShort, uiState.playedFromLandscape) {
         val currentActivity = activity
         if (currentActivity != null) {
-            if (uiState.isLandscape) {
-                currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (isVideo && isReelOrShort) {
+                currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
+            } else if (uiState.isLandscape || (isDeviceLandscape && isVideo)) {
+                if (uiState.isLandscape) {
+                    currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                }
                 ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = true, isDarkTheme = isDarkTheme)
             } else {
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
             }
         }
         onDispose {
             if (currentActivity != null) {
-                currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                if (currentPlayedFromLandscape || viewModel.uiState.value.playedFromLandscape) {
+                    currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                } else {
+                    currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
                 ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
             }
         }
@@ -143,7 +168,6 @@ fun PlayerScreen(
             if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) && (activity is ComponentActivity)) {
                 activity.removeOnPictureInPictureModeChangedListener(listener)
             }
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             ImmersiveUtils.setImmersiveFullscreen(activity, enabled = false)
         }
     }
@@ -177,9 +201,12 @@ fun PlayerScreen(
         }
     }
 
-    val handleBack: () -> Unit = onClose
-
-    val isVideo = currentMediaItem.mediaType == MediaType.VIDEO
+    val handleBack: () -> Unit = {
+        if (currentPlayedFromLandscape || uiState.playedFromLandscape || viewModel.uiState.value.playedFromLandscape) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        onClose()
+    }
 
     androidx.compose.runtime.SideEffect {
         val window = activity?.window
@@ -207,7 +234,7 @@ fun PlayerScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(if (isVideo && uiState.isLandscape) Color.Black else Color.Transparent),
+            .background(if (isVideo && isLandscape) Color.Black else Color.Transparent),
     ) {
         if (currentMediaItem.mediaType == MediaType.VIDEO) {
             VideoPlayerContent(
@@ -245,7 +272,7 @@ fun PlayerScreen(
                 onToggleShuffle = { viewModel.toggleShuffleMode() },
                 onToggleLoop = { viewModel.toggleLoopMode() },
                 onSpeedSelected = { speed -> viewModel.setPlaybackSpeed(speed) },
-                onBack = onClose,
+                onBack = handleBack,
                 modifier = Modifier.fillMaxSize(),
             )
         }
