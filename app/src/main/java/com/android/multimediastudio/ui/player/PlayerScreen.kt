@@ -33,6 +33,7 @@ import androidx.core.util.Consumer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.android.multimediastudio.MainActivity
 import com.android.multimediastudio.data.model.MediaItem
 import com.android.multimediastudio.data.model.MediaType
 import com.android.multimediastudio.util.ImmersiveUtils
@@ -130,7 +131,7 @@ fun PlayerScreen(
     // Handle landscape orientation toggling and immersive fullscreen mode
     DisposableEffect(uiState.isLandscape, isDeviceLandscape, activity, isDarkTheme, isVideo, isReelOrShort, uiState.playedFromLandscape) {
         val currentActivity = activity
-        if (currentActivity != null) {
+        if (currentActivity != null && !currentActivity.isInPictureInPictureMode) {
             if (isVideo && isReelOrShort) {
                 currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = false, isDarkTheme = isDarkTheme)
@@ -145,7 +146,7 @@ fun PlayerScreen(
             }
         }
         onDispose {
-            if (currentActivity != null) {
+            if (currentActivity != null && !currentActivity.isInPictureInPictureMode) {
                 if (currentPlayedFromLandscape || viewModel.uiState.value.playedFromLandscape) {
                     currentActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 } else {
@@ -178,12 +179,12 @@ fun PlayerScreen(
         val observer = LifecycleEventObserver { _, event ->
             val currentActivity = activity
             if (event == Lifecycle.Event.ON_RESUME) {
-                if (currentActivity != null && uiState.isLandscape) {
+                if (currentActivity != null && uiState.isLandscape && !currentActivity.isInPictureInPictureMode) {
                     ImmersiveUtils.setImmersiveFullscreen(currentActivity, enabled = true)
                 }
-            } else if ((event == Lifecycle.Event.ON_PAUSE) || (event == Lifecycle.Event.ON_STOP)) {
+            } else if (event == Lifecycle.Event.ON_STOP) {
                 val isAudio = currentMediaItem.mediaType == MediaType.AUDIO
-                val isInPip = (context.findActivity()?.isInPictureInPictureMode == true) || viewModel.uiState.value.isInPipMode
+                val isInPip = (currentActivity?.isInPictureInPictureMode == true) || viewModel.uiState.value.isInPipMode
                 if (!isAudio && !isInPip) {
                     viewModel.pauseOnBackground()
                 }
@@ -257,6 +258,9 @@ fun PlayerScreen(
                 onToggleScreenLock = { viewModel.toggleScreenLock() },
                 onToggleOrientation = { viewModel.toggleOrientation() },
                 onScrubbingChanged = { isScrubbing -> viewModel.setUserScrubbing(isScrubbing) },
+                onVideoBoundsChanged = { rect ->
+                    (activity as? MainActivity)?.onVideoBoundsChanged(rect) ?: viewModel.updateVideoSourceRect(rect)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

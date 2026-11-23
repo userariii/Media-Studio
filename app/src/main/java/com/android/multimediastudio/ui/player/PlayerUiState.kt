@@ -1,5 +1,6 @@
 package com.android.multimediastudio.ui.player
 
+import android.graphics.Rect
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import com.android.multimediastudio.data.model.MediaItem
@@ -107,7 +108,10 @@ data class PlayerUiState(
     val showSubtitleTrackSheet: Boolean = false,
     val showSpeedMenu: Boolean = false,
     val playedFromLandscape: Boolean = false,
-    val interactionNonce: Int = 0
+    val interactionNonce: Int = 0,
+    val videoSourceRect: Rect? = null,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0
 ) {
     fun getFormattedCurrentPosition(): String = formatTime(currentPositionMs)
 

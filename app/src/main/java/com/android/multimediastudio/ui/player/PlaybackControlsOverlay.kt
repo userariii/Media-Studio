@@ -120,7 +120,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -154,27 +156,9 @@ fun VideoPlayerContent(
     onToggleScreenLock: () -> Unit,
     onToggleOrientation: () -> Unit,
     onScrubbingChanged: (Boolean) -> Unit = {},
+    onVideoBoundsChanged: ((android.graphics.Rect) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    if (uiState.isInPipMode) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            VideoPlayerSurface(
-                player = player,
-                onSurfaceClick = { },
-                onRewind = { },
-                onForward = { },
-                isScreenLocked = false,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        return
-    }
-
     val density = LocalDensity.current
     val collapseThresholdPx = with(density) { 120.dp.toPx() }
     val coroutineScope = rememberCoroutineScope()
@@ -332,12 +316,19 @@ fun VideoPlayerContent(
     }
 
     // Video aspect ratio & fill scale calculation for landscape
-    val videoWidth = player?.videoSize?.width ?: 0
-    val videoHeight = player?.videoSize?.height ?: 0
-    val videoRotation = player?.videoSize?.unappliedRotationDegrees ?: 0
+    val stateWidth = uiState.videoWidth
+    val stateHeight = uiState.videoHeight
+    val (effectiveVideoWidth, effectiveVideoHeight) = if (stateWidth > 0 && stateHeight > 0) {
+        Pair(stateWidth.toFloat(), stateHeight.toFloat())
+    } else {
+        val videoWidth = player?.videoSize?.width ?: 0
+        val videoHeight = player?.videoSize?.height ?: 0
+        val videoRotation = player?.videoSize?.unappliedRotationDegrees ?: 0
 
-    val effectiveVideoWidth = if (videoRotation == 90 || videoRotation == 270) videoHeight.toFloat() else videoWidth.toFloat()
-    val effectiveVideoHeight = if (videoRotation == 90 || videoRotation == 270) videoWidth.toFloat() else videoHeight.toFloat()
+        val w = if (videoRotation == 90 || videoRotation == 270) videoHeight.toFloat() else videoWidth.toFloat()
+        val h = if (videoRotation == 90 || videoRotation == 270) videoWidth.toFloat() else videoHeight.toFloat()
+        Pair(w, h)
+    }
 
     val fillScale = remember(effectiveVideoWidth, effectiveVideoHeight, overlaySize) {
         val vw = effectiveVideoWidth
@@ -384,7 +375,7 @@ fun VideoPlayerContent(
             modifier = modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    translationY = offsetY.value
+                    translationY = if (uiState.isInPipMode) 0f else offsetY.value
                 }
                 .background(Color.Black)
                 .onSizeChanged {
@@ -392,8 +383,8 @@ fun VideoPlayerContent(
                     overlaySize = it
                     containerHeight = it.height.toFloat()
                 }
-                .pointerInput(uiState.isScreenLocked) {
-                    if (uiState.isScreenLocked) return@pointerInput
+                .pointerInput(uiState.isScreenLocked, uiState.isInPipMode) {
+                    if (uiState.isScreenLocked || uiState.isInPipMode) return@pointerInput
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         var isHolding = false
@@ -579,8 +570,8 @@ fun VideoPlayerContent(
                         }
                     )
                 }
-                .pointerInput(uiState.isScreenLocked, fillScale) {
-                    if (uiState.isScreenLocked) return@pointerInput
+                .pointerInput(uiState.isScreenLocked, fillScale, uiState.isInPipMode) {
+                    if (uiState.isScreenLocked || uiState.isInPipMode) return@pointerInput
                     detectLandscapeVideoTransformGestures(
                         currentZoomScale = { currentZoomScale },
                         fillScale = { fillScale },
@@ -596,7 +587,7 @@ fun VideoPlayerContent(
         ) {
             VideoPlayerSurface(
                 player = player,
-                onSurfaceClick = onOverlayClick,
+                onSurfaceClick = if (uiState.isInPipMode) ({ }) else onOverlayClick,
                 onRewind = handleRewind,
                 onForward = handleForward,
                 isScreenLocked = uiState.isScreenLocked,
@@ -607,15 +598,43 @@ fun VideoPlayerContent(
                 externalPanOffset = Offset.Zero,
                 fillScale = fillScale,
                 onZoomChanged = null,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { coordinates ->
+                        if (coordinates.isAttached && !uiState.isInPipMode) {
+                            val bounds = coordinates.boundsInWindow()
+                            val containerW = bounds.width
+                            val containerH = bounds.height
+                            if (containerW > 0f && containerH > 0f && videoAspect > 0f) {
+                                val containerAspect = containerW / containerH
+                                val (vw, vh) = if (containerAspect > videoAspect) {
+                                    val w = containerH * videoAspect
+                                    Pair(w, containerH)
+                                } else {
+                                    val h = containerW / videoAspect
+                                    Pair(containerW, h)
+                                }
+                                val left = bounds.left + (containerW - vw) / 2f
+                                val top = bounds.top + (containerH - vh) / 2f
+                                val rect = android.graphics.Rect(
+                                    left.toInt(),
+                                    top.toInt(),
+                                    (left + vw).toInt(),
+                                    (top + vh).toInt()
+                                )
+                                onVideoBoundsChanged?.invoke(rect)
+                            }
+                        }
+                    }
             )
 
-            AnimatedVisibility(
-                visible = uiState.areControlsVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.fillMaxSize()
-            ) {
+            if (!uiState.isInPipMode) {
+                AnimatedVisibility(
+                    visible = uiState.areControlsVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.fillMaxSize()
+                ) {
                 if (uiState.isScreenLocked) {
                     Box(
                         modifier = Modifier
@@ -1035,6 +1054,7 @@ fun VideoPlayerContent(
                 isReelOrShort = false,
                 modifier = Modifier.fillMaxSize()
             )
+            }
         }
     } else {
         // FULLSCREEN PORTRAIT MODE (100% Screen Video Surface + Overlaid Tap-to-Show Controls)
@@ -1050,11 +1070,11 @@ fun VideoPlayerContent(
                     containerHeight = it.height.toFloat()
                 }
                 .graphicsLayer {
-                    translationY = offsetY.value
+                    translationY = if (uiState.isInPipMode) 0f else offsetY.value
                 }
                 .background(Color.Black)
-                .pointerInput(uiState.isScreenLocked) {
-                    if (uiState.isScreenLocked) return@pointerInput
+                .pointerInput(uiState.isScreenLocked, uiState.isInPipMode) {
+                    if (uiState.isScreenLocked || uiState.isInPipMode) return@pointerInput
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         var isHolding = false
@@ -1252,7 +1272,9 @@ fun VideoPlayerContent(
                 }
         ) {
             // 1. VIDEO SURFACE (Aspect ratio clipped box for Reels/Shorts & Landscape/Movie videos)
-            val outerViewportModifier = if (isPortraitVideo) {
+            val outerViewportModifier = if (uiState.isInPipMode) {
+                Modifier.fillMaxSize()
+            } else if (isPortraitVideo) {
                 Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
@@ -1273,7 +1295,9 @@ fun VideoPlayerContent(
                 val availableWidth = maxWidth
                 val availableHeight = maxHeight
 
-                val videoModifier = if (availableHeight > 0.dp && availableWidth > 0.dp) {
+                val videoModifier = if (uiState.isInPipMode) {
+                    Modifier.fillMaxSize()
+                } else if (availableHeight > 0.dp && availableWidth > 0.dp) {
                     val containerAspect = availableWidth / availableHeight
                     if (containerAspect > videoAspect) {
                         Modifier
@@ -1297,6 +1321,18 @@ fun VideoPlayerContent(
                         } else {
                             coordinates.boundsInParent()
                         }
+                        if (coordinates.isAttached && !uiState.isInPipMode) {
+                            val bounds = coordinates.boundsInWindow()
+                            if (bounds.width > 0f && bounds.height > 0f) {
+                                val rect = android.graphics.Rect(
+                                    bounds.left.toInt(),
+                                    bounds.top.toInt(),
+                                    bounds.right.toInt(),
+                                    bounds.bottom.toInt()
+                                )
+                                onVideoBoundsChanged?.invoke(rect)
+                            }
+                        }
                     }
 
                 Column(
@@ -1308,14 +1344,15 @@ fun VideoPlayerContent(
                     ) {
                         VideoPlayerSurface(
                             player = player,
-                            onSurfaceClick = onOverlayClick,
+                            onSurfaceClick = if (uiState.isInPipMode) ({ }) else onOverlayClick,
                             onRewind = handleRewind,
                             onForward = handleForward,
                             isScreenLocked = uiState.isScreenLocked,
-                            enableGestures = true,
+                            enableGestures = !uiState.isInPipMode,
                             externalZoomScale = zoomScale,
                             externalPanOffset = panOffset,
                             fillScale = fillScale,
+                            resizeMode = if (isPortraitVideo && !uiState.isInPipMode) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT,
                             onZoomChanged = { scale, offset ->
                                 zoomScale = scale
                                 panOffset = if (scale <= 1.01f) Offset.Zero else offset
@@ -1330,7 +1367,7 @@ fun VideoPlayerContent(
                     }
 
                     // FULLSCREEN EXPAND BUTTON IN BLACK SPACE RIGHT BELOW VIDEO CONTAINER (FAR RIGHT)
-                    if (!isPortraitVideo && !uiState.isScreenLocked) {
+                    if (!isPortraitVideo && !uiState.isScreenLocked && !uiState.isInPipMode) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1353,6 +1390,7 @@ fun VideoPlayerContent(
                 }
             }
 
+            if (!uiState.isInPipMode) {
             val showControlsInPortrait = !isPortraitVideo || uiState.areControlsVisible
 
             AnimatedVisibility(
@@ -1879,6 +1917,7 @@ fun VideoPlayerContent(
                 isReelOrShort = isPortraitVideo,
                 modifier = indicatorModifier
             )
+            }
         }
     }
 }

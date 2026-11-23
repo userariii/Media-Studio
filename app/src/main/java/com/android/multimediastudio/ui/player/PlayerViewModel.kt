@@ -2,6 +2,7 @@ package com.android.multimediastudio.ui.player
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.net.Uri
 import android.os.PowerManager
 import android.util.Log
@@ -18,6 +19,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -109,6 +111,15 @@ class PlayerViewModel(
 
         override fun onTracksChanged(tracks: Tracks) {
             updateTracksFromPlayer(tracks)
+        }
+
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            val rot = videoSize.unappliedRotationDegrees
+            val effW = if (rot == 90 || rot == 270) videoSize.height else videoSize.width
+            val effH = if (rot == 90 || rot == 270) videoSize.width else videoSize.height
+            if (effW > 0 && effH > 0) {
+                _uiState.update { it.copy(videoWidth = effW, videoHeight = effH) }
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -359,6 +370,17 @@ class PlayerViewModel(
         }
         val newFullScreen = if (isTargetVideo && !isReel) _uiState.value.isFullScreen else false
 
+        val parsedDims = mediaItem.resolution?.let { res ->
+            if (res.contains("x")) {
+                val parts = res.split("x")
+                val w = parts.getOrNull(0)?.toIntOrNull() ?: 0
+                val h = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                if (w > 0 && h > 0) Pair(w, h) else null
+            } else null
+        }
+        val initialW = parsedDims?.first ?: 0
+        val initialH = parsedDims?.second ?: 0
+
         _uiState.update {
             it.copy(
                 currentMediaItem = mediaItem,
@@ -371,7 +393,10 @@ class PlayerViewModel(
                 isFullScreen = newFullScreen,
                 isScreenLocked = false,
                 isExpanded = it.isExpanded,
-                playedFromLandscape = effectivePlayedFromLandscape
+                playedFromLandscape = effectivePlayedFromLandscape,
+                videoSourceRect = null,
+                videoWidth = initialW,
+                videoHeight = initialH
             )
         }
 
@@ -673,6 +698,12 @@ class PlayerViewModel(
         }
     }
 
+    fun updateVideoSourceRect(rect: Rect?) {
+        if (_uiState.value.videoSourceRect != rect) {
+            _uiState.update { it.copy(videoSourceRect = rect) }
+        }
+    }
+
     fun expandPlayer() {
         _uiState.update { it.copy(isExpanded = true) }
     }
@@ -702,7 +733,10 @@ class PlayerViewModel(
                 isPlaying = false,
                 currentPositionMs = 0L,
                 durationMs = 0L,
-                playedFromLandscape = false
+                playedFromLandscape = false,
+                videoSourceRect = null,
+                videoWidth = 0,
+                videoHeight = 0
             )
         }
     }

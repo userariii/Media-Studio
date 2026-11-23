@@ -174,6 +174,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.android.multimediastudio.MainActivity
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
 import com.android.multimediastudio.data.model.MediaType
@@ -243,7 +244,7 @@ fun MediaDiscoveryScreen(
             (playerLayoutState.isLandscape || playerLayoutState.isFullScreen || isDeviceLandscape)
 
     // On phones in landscape (compact height) or whenever the player is expanded, use full width (single pane)
-    val shouldForceSinglePane = isPlayerFullOrLandscape || (isDeviceLandscape && isCompactHeight)
+    val shouldForceSinglePane = isPlayerFullOrLandscape || (isDeviceLandscape && isCompactHeight) || playerLayoutState.isInPipMode
 
     val scaffoldDirective = if (shouldForceSinglePane) {
         currentDirective.copy(maxHorizontalPartitions = 1)
@@ -480,15 +481,22 @@ private fun DiscoveryFloatingVideoPip(
     modifier: Modifier = Modifier
 ) {
     val playerUiState by playerViewModel.uiState.collectAsState()
+    val context = LocalContext.current
     FloatingVideoPip(
         mediaItem = mediaItem,
         isPlaying = playerUiState.isPlaying,
         player = playerViewModel.getPlayer(),
         currentPositionMs = playerUiState.currentPositionMs,
         durationMs = playerUiState.durationMs,
+        isInPipMode = playerUiState.isInPipMode,
+        videoWidth = playerUiState.videoWidth,
+        videoHeight = playerUiState.videoHeight,
         onPlayPauseClick = { playerViewModel.togglePlayPause() },
         onExpandClick = onExpand,
         onCloseClick = onClose,
+        onVideoBoundsChanged = { rect ->
+            (context.findActivity() as? MainActivity)?.onVideoBoundsChanged(rect) ?: playerViewModel.updateVideoSourceRect(rect)
+        },
         modifier = modifier
     )
 }

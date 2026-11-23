@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
@@ -44,6 +45,7 @@ import coil.ImageLoader
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.android.multimediastudio.ui.media.MediaViewModel
+import com.android.multimediastudio.ui.player.PlayerUiState
 import com.android.multimediastudio.ui.player.PlayerViewModel
 import com.android.multimediastudio.ui.theme.MultimediaStudioTheme
 import com.android.multimediastudio.util.ImmersiveUtils
@@ -69,9 +71,9 @@ class MainActivity : ComponentActivity() {
                 } else if (controlType == CONTROL_TYPE_PAUSE) {
                     playerViewModel.pause()
                 }
-                val isPlaying = playerViewModel.uiState.value.isPlaying
-                val isVideo = playerViewModel.uiState.value.currentMediaItem?.mediaType == MediaType.VIDEO
-                updatePipParams(isPlaying, isPlaying && isVideo)
+                val isPlaying = controlType == CONTROL_TYPE_PLAY
+                val state = playerViewModel.uiState.value.copy(isPlaying = isPlaying)
+                updatePipParams(state)
             }
         }
     }
@@ -135,7 +137,7 @@ class MainActivity : ComponentActivity() {
                         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     }
 
-                    updatePipParams(state.isPlaying, isVideoPlaying)
+                    updatePipParams(state)
                 }
             }
         }
@@ -238,23 +240,14 @@ class MainActivity : ComponentActivity() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val state = playerViewModel.uiState.value
-            val isVideoPlaying = state.isPlaying && state.currentMediaItem?.mediaType == MediaType.VIDEO
-            if (isVideoPlaying && !isInPictureInPictureMode) {
-                playerViewModel.play()
-                val isReel = state.currentMediaItem?.isReelOrShort() == true
-                val rational = calculatePipRational(isReel)
-                val builder = PictureInPictureParams.Builder()
-                    .setActions(getPipActions(true))
-                try {
-                    builder.setAspectRatio(rational)
-                } catch (_: Exception) {}
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    builder.setAutoEnterEnabled(true)
-                }
-                try {
-                    enterPictureInPictureMode(builder.build())
-                } catch (_: Exception) {
-                    // Ignore if PiP fails
+            val isVideo = state.currentMediaItem?.mediaType == MediaType.VIDEO
+            if (isVideo && !isInPictureInPictureMode) {
+                buildPipParams(state)?.let { params ->
+                    try {
+                        enterPictureInPictureMode(params)
+                    } catch (_: Exception) {
+                        // Ignore if PiP fails
+                    }
                 }
             }
         }
@@ -265,13 +258,14 @@ class MainActivity : ComponentActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        val wasPlaying = playerViewModel.uiState.value.isPlaying
+        val wasPlaying = playerViewModel.uiState.value.isPlaying || (playerViewModel.getPlayer()?.playWhenReady == true)
         val currentItem = playerViewModel.uiState.value.currentMediaItem
         val isVideo = currentItem?.mediaType == MediaType.VIDEO
 
         playerViewModel.setInPipMode(isInPictureInPictureMode)
         if (isInPictureInPictureMode) {
-            if (wasPlaying || isVideo) {
+            // Preserve playback state: only maintain play if it was already playing before entering PiP
+            if (wasPlaying) {
                 playerViewModel.play()
             }
         } else {
@@ -282,49 +276,140 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun updatePipParams(isPlaying: Boolean, isVideoPlaying: Boolean = isPlaying) {
+    private fun updatePipParams(state: PlayerUiState) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val state = playerViewModel.uiState.value
-            val isReel = state.currentMediaItem?.isReelOrShort() == true
-            val rational = calculatePipRational(isReel)
-
-            val builder = PictureInPictureParams.Builder()
-                .setActions(getPipActions(isPlaying))
-
-            try {
-                builder.setAspectRatio(rational)
-            } catch (_: Exception) {
-                // Ignore platform exceptions
+            val isVideo = state.currentMediaItem?.mediaType == MediaType.VIDEO
+            if (!isVideo) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        setPictureInPictureParams(
+                            PictureInPictureParams.Builder()
+                                .setAutoEnterEnabled(false)
+                                .build()
+                        )
+                    } catch (_: Exception) {}
+                }
+                return
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                builder.setAutoEnterEnabled(isVideoPlaying)
-            }
-
-            try {
-                setPictureInPictureParams(builder.build())
-            } catch (_: Exception) {
-                // Ignore platform exceptions
+            buildPipParams(state)?.let { params ->
+                try {
+                    setPictureInPictureParams(params)
+                } catch (_: Exception) {}
             }
         }
     }
 
-    private fun calculatePipRational(isReel: Boolean): Rational {
-        val player = playerViewModel.getPlayer()
-        val vw = player?.videoSize?.width ?: 0
-        val vh = player?.videoSize?.height ?: 0
-        val rot = player?.videoSize?.unappliedRotationDegrees ?: 0
-        val effW = if (rot == 90 || rot == 270) vh else vw
-        val effH = if (rot == 90 || rot == 270) vw else vh
+    fun onVideoBoundsChanged(rect: Rect) {
+        playerViewModel.updateVideoSourceRect(rect)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val state = playerViewModel.uiState.value
+            if (state.currentMediaItem?.mediaType == MediaType.VIDEO) {
+                buildPipParams(state, overrideRect = rect)?.let { params ->
+                    try {
+                        setPictureInPictureParams(params)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private fun buildPipParams(state: PlayerUiState, overrideRect: Rect? = null): PictureInPictureParams? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        val isVideo = state.currentMediaItem?.mediaType == MediaType.VIDEO
+        if (!isVideo) return null
+
+        val builder = PictureInPictureParams.Builder()
+            .setActions(getPipActions(state.isPlaying))
+
+        val isInPip = isInPictureInPictureMode || state.isInPipMode
+        var appliedRational: Rational? = null
+        var appliedRect: Rect? = null
+
+        // sourceRectHint is ONLY used when entering PiP from the in-app UI.
+        // Once already in PiP, do NOT set sourceRectHint so the window manager
+        // can smoothly animate window resize when aspect ratio changes between queue items.
+        if (!isInPip) {
+            val rect = overrideRect ?: state.videoSourceRect
+            if (rect != null && !rect.isEmpty && rect.width() > 0 && rect.height() > 0) {
+                val rectAspect = rect.width().toFloat() / rect.height().toFloat()
+                if (rectAspect in 0.4184f..2.39f) {
+                    appliedRational = Rational(rect.width(), rect.height())
+                    appliedRect = rect
+                } else if (rectAspect < 0.4184f) {
+                    val targetHeight = (rect.width() * 2.39f).toInt()
+                    val inset = (rect.height() - targetHeight) / 2
+                    appliedRational = Rational(100, 239)
+                    appliedRect = Rect(rect.left, rect.top + inset, rect.right, rect.top + inset + targetHeight)
+                } else {
+                    val targetWidth = (rect.height() * 2.39f).toInt()
+                    val inset = (rect.width() - targetWidth) / 2
+                    appliedRational = Rational(239, 100)
+                    appliedRect = Rect(rect.left + inset, rect.top, rect.left + inset + targetWidth, rect.bottom)
+                }
+            }
+        }
+
+        if (appliedRational == null) {
+            appliedRational = calculatePipRational(state)
+        }
+
+        try {
+            builder.setAspectRatio(appliedRational)
+        } catch (_: Exception) {}
+
+        if (appliedRect != null && !appliedRect.isEmpty) {
+            try {
+                builder.setSourceRectHint(appliedRect)
+            } catch (_: Exception) {}
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val canAutoEnter = isVideo
+            builder.setAutoEnterEnabled(canAutoEnter)
+            builder.setSeamlessResizeEnabled(true)
+        }
+
+        return try {
+            builder.build()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun calculatePipRational(state: PlayerUiState): Rational {
+        val currentItem = state.currentMediaItem
+        val isReel = currentItem?.isReelOrShort() == true
+        val vw = state.videoWidth
+        val vh = state.videoHeight
+
+        val (effW, effH) = if (vw > 0 && vh > 0) {
+            Pair(vw, vh)
+        } else {
+            val player = playerViewModel.getPlayer()
+            val pvw = player?.videoSize?.width ?: 0
+            val pvh = player?.videoSize?.height ?: 0
+            val rot = player?.videoSize?.unappliedRotationDegrees ?: 0
+            val w = if (rot == 90 || rot == 270) pvh else pvw
+            val h = if (rot == 90 || rot == 270) pvw else pvh
+            if (w > 0 && h > 0) Pair(w, h) else Pair(0, 0)
+        }
 
         return if (effW > 0 && effH > 0) {
-            val aspect = effW.toFloat() / effH.toFloat()
-            if (aspect in 0.4184f..2.39f) {
-                Rational(effW, effH)
-            } else if (aspect < 0.4184f) {
-                Rational(100, 239)
+            val isPortrait = effH > effW
+            if ((isReel && isPortrait) || (!isReel && !isPortrait)) {
+                val aspect = effW.toFloat() / effH.toFloat()
+                if (aspect in 0.4184f..2.39f) {
+                    Rational(effW, effH)
+                } else if (aspect < 0.4184f) {
+                    Rational(100, 239)
+                } else {
+                    Rational(239, 100)
+                }
+            } else if (isReel) {
+                Rational(9, 16)
             } else {
-                Rational(239, 100)
+                Rational(16, 9)
             }
         } else if (isReel) {
             Rational(9, 16)
