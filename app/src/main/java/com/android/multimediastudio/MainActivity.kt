@@ -222,6 +222,15 @@ class MainActivity : ComponentActivity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
+    override fun onStop() {
+        super.onStop()
+        val state = playerViewModel.uiState.value
+        val isVideo = state.currentMediaItem?.mediaType == MediaType.VIDEO
+        if (isVideo && !isChangingConfigurations) {
+            playerViewModel.pause()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
