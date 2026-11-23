@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import androidx.media3.ui.AspectRatioFrameLayout
 import com.android.multimediastudio.data.model.MediaItem
 
 @Composable
@@ -53,9 +54,45 @@ fun FloatingVideoPip(
     currentPositionMs: Long = 0L,
     durationMs: Long = 0L
 ) {
+    val videoWidth = player?.videoSize?.width ?: 0
+    val videoHeight = player?.videoSize?.height ?: 0
+    val videoRotation = player?.videoSize?.unappliedRotationDegrees ?: 0
+
+    val effectiveVideoWidth = if (videoRotation == 90 || videoRotation == 270) videoHeight.toFloat() else videoWidth.toFloat()
+    val effectiveVideoHeight = if (videoRotation == 90 || videoRotation == 270) videoWidth.toFloat() else videoHeight.toFloat()
+
+    val isPortraitFromMetadata = mediaItem.isReelOrShort()
+
+    val isPortraitVideo = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
+        effectiveVideoHeight > effectiveVideoWidth
+    } else {
+        isPortraitFromMetadata
+    }
+
+    val videoAspect = if (effectiveVideoWidth > 0f && effectiveVideoHeight > 0f) {
+        val raw = effectiveVideoWidth / effectiveVideoHeight
+        if (isPortraitVideo) raw.coerceIn(0.35f, 1.0f) else raw.coerceIn(1.0f, 2.5f)
+    } else {
+        val parsedAspect = mediaItem.resolution?.let { res ->
+            if (res.contains("x")) {
+                val parts = res.split("x")
+                val w = parts.getOrNull(0)?.toFloatOrNull() ?: 0f
+                val h = parts.getOrNull(1)?.toFloatOrNull() ?: 0f
+                if (w > 0f && h > 0f) {
+                    val raw = w / h
+                    if (isPortraitVideo) raw.coerceIn(0.35f, 1.0f) else raw.coerceIn(1.0f, 2.5f)
+                } else null
+            } else null
+        }
+        parsedAspect ?: if (isPortraitVideo) 9f / 16f else 16f / 9f
+    }
+
+    val pipAspectRatio = if (isPortraitVideo) videoAspect else 16f / 9f
+    val defaultWidth = if (isPortraitVideo) 140.dp else 220.dp
+
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
-    var pipWidthDp by remember { mutableStateOf(220.dp) }
+    var pipWidthDp by remember(mediaItem.id, isPortraitVideo) { mutableStateOf(defaultWidth) }
 
     val effectiveProgress = if (durationMs > 0) {
         (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
@@ -76,11 +113,13 @@ fun FloatingVideoPip(
                     translationY = offsetY
                 }
                 .width(pipWidthDp)
-                .aspectRatio(16f / 9f)
-                .pointerInput(Unit) {
+                .aspectRatio(pipAspectRatio)
+                .pointerInput(isPortraitVideo) {
                     detectTransformGestures { _, pan, zoom, _ ->
                         if (zoom != 1f) {
-                            pipWidthDp = (pipWidthDp * zoom).coerceIn(140.dp, 340.dp)
+                            val minWidth = if (isPortraitVideo) 100.dp else 140.dp
+                            val maxWidth = if (isPortraitVideo) 200.dp else 340.dp
+                            pipWidthDp = (pipWidthDp * zoom).coerceIn(minWidth, maxWidth)
                         }
                         offsetX += pan.x
                         offsetY += pan.y
@@ -109,6 +148,7 @@ fun FloatingVideoPip(
                     onSurfaceClick = onExpandClick,
                     isScreenLocked = false,
                     enableGestures = false,
+                    resizeMode = if (isPortraitVideo) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT,
                     modifier = Modifier.fillMaxSize()
                 )
 

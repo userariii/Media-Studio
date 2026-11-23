@@ -81,6 +81,7 @@ fun VideoPlayerSurface(
     externalZoomScale: Float? = null,
     externalPanOffset: Offset? = null,
     fillScale: Float = 1.0f,
+    resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
     onZoomChanged: ((Float, Offset) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -159,7 +160,7 @@ fun VideoPlayerSurface(
             factory = { context ->
                 val playerView = LayoutInflater.from(context).inflate(R.layout.player_view, null, false) as PlayerView
                 playerView.useController = false
-                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                playerView.resizeMode = resizeMode
                 playerView.player = player
                 playerView.clipChildren = true
                 playerView.clipToPadding = true
@@ -169,7 +170,7 @@ fun VideoPlayerSurface(
             update = { playerView ->
                 playerView.player = player
                 playerView.keepScreenOn = player?.isPlaying == true
-                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                playerView.resizeMode = resizeMode
                 // Hide the built-in subtitle view when zoomed so captions
                 // are rendered by the separate overlay that isn't affected by zoom
                 val isZoomed = zoomScale > 1.01f

@@ -241,8 +241,13 @@ class MainActivity : ComponentActivity() {
             val isVideoPlaying = state.isPlaying && state.currentMediaItem?.mediaType == MediaType.VIDEO
             if (isVideoPlaying && !isInPictureInPictureMode) {
                 playerViewModel.play()
+                val isReel = state.currentMediaItem?.isReelOrShort() == true
+                val rational = calculatePipRational(isReel)
                 val builder = PictureInPictureParams.Builder()
                     .setActions(getPipActions(true))
+                try {
+                    builder.setAspectRatio(rational)
+                } catch (_: Exception) {}
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     builder.setAutoEnterEnabled(true)
                 }
@@ -279,11 +284,14 @@ class MainActivity : ComponentActivity() {
 
     private fun updatePipParams(isPlaying: Boolean, isVideoPlaying: Boolean = isPlaying) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val state = playerViewModel.uiState.value
+            val isReel = state.currentMediaItem?.isReelOrShort() == true
+            val rational = calculatePipRational(isReel)
+
             val builder = PictureInPictureParams.Builder()
                 .setActions(getPipActions(isPlaying))
 
             try {
-                val rational = Rational(16, 9)
                 builder.setAspectRatio(rational)
             } catch (_: Exception) {
                 // Ignore platform exceptions
@@ -298,6 +306,30 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) {
                 // Ignore platform exceptions
             }
+        }
+    }
+
+    private fun calculatePipRational(isReel: Boolean): Rational {
+        val player = playerViewModel.getPlayer()
+        val vw = player?.videoSize?.width ?: 0
+        val vh = player?.videoSize?.height ?: 0
+        val rot = player?.videoSize?.unappliedRotationDegrees ?: 0
+        val effW = if (rot == 90 || rot == 270) vh else vw
+        val effH = if (rot == 90 || rot == 270) vw else vh
+
+        return if (effW > 0 && effH > 0) {
+            val aspect = effW.toFloat() / effH.toFloat()
+            if (aspect in 0.4184f..2.39f) {
+                Rational(effW, effH)
+            } else if (aspect < 0.4184f) {
+                Rational(100, 239)
+            } else {
+                Rational(239, 100)
+            }
+        } else if (isReel) {
+            Rational(9, 16)
+        } else {
+            Rational(16, 9)
         }
     }
 
