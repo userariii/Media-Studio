@@ -1240,9 +1240,8 @@ fun FloatingMediaFilterBar(
     onFilterSelected: (MediaFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val pillBackgroundColor = if (isDarkTheme) Color(0xFF131315) else Color.White
-    val borderColor = if (isDarkTheme) Color.White.copy(alpha = 0.32f) else Color.Black.copy(alpha = 0.18f)
+    val pillBackgroundColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
 
     Surface(
         shape = CircleShape,
@@ -1262,24 +1261,21 @@ fun FloatingMediaFilterBar(
                 onClick = { onFilterSelected(MediaFilter.ALL) },
                 icon = Icons.Rounded.PermMedia,
                 label = "All",
-                contentDescription = "All Media",
-                isDarkTheme = isDarkTheme
+                contentDescription = "All Media"
             )
             FloatingFilterItem(
                 selected = selectedFilter == MediaFilter.VIDEO,
                 onClick = { onFilterSelected(MediaFilter.VIDEO) },
                 icon = Icons.Rounded.VideoLibrary,
                 label = "Videos",
-                contentDescription = "Videos",
-                isDarkTheme = isDarkTheme
+                contentDescription = "Videos"
             )
             FloatingFilterItem(
                 selected = selectedFilter == MediaFilter.AUDIO,
                 onClick = { onFilterSelected(MediaFilter.AUDIO) },
                 icon = Icons.AutoMirrored.Rounded.VolumeUp,
                 label = "Audio",
-                contentDescription = "Audio",
-                isDarkTheme = isDarkTheme
+                contentDescription = "Audio"
             )
         }
     }
@@ -1291,17 +1287,15 @@ private fun FloatingFilterItem(
     onClick: () -> Unit,
     icon: ImageVector,
     label: String,
-    contentDescription: String,
-    isDarkTheme: Boolean = true
+    contentDescription: String
 ) {
     val backgroundColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
         animationSpec = tween(durationMillis = 150),
         label = "FloatingFilterBg"
     )
-    val unselectedColor = if (isDarkTheme) Color.White.copy(alpha = 0.72f) else Color.Black.copy(alpha = 0.7f)
     val contentTint by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else unselectedColor,
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = tween(durationMillis = 150),
         label = "FloatingFilterTint"
     )

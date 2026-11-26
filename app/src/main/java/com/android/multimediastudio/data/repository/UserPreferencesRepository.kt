@@ -38,12 +38,8 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     fun getInitialAppThemeColor(): AppThemeColor {
-        val colorStr = syncPrefs.getString("app_theme_color", null) ?: return AppThemeColor.DEFAULT
-        return try {
-            AppThemeColor.valueOf(colorStr)
-        } catch (_: Exception) {
-            AppThemeColor.DEFAULT
-        }
+        val colorStr = syncPrefs.getString("app_theme_color", null)
+        return AppThemeColor.fromName(colorStr)
     }
 
     fun getInitialHideSocialMedia(): Boolean {
@@ -82,12 +78,8 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val appThemeColorStream: Flow<AppThemeColor> = dataStore.data.map { prefs ->
-        val colorStr = prefs[appThemeColorKey] ?: syncPrefs.getString("app_theme_color", null) ?: AppThemeColor.DEFAULT.name
-        try {
-            AppThemeColor.valueOf(colorStr)
-        } catch (_: Exception) {
-            AppThemeColor.DEFAULT
-        }
+        val colorStr = prefs[appThemeColorKey] ?: syncPrefs.getString("app_theme_color", null)
+        AppThemeColor.fromName(colorStr)
     }
 
     val hideSocialMediaStream: Flow<Boolean> = dataStore.data.map { prefs ->

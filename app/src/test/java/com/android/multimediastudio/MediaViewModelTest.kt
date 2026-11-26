@@ -358,4 +358,21 @@ class MediaViewModelTest {
         assertEquals(SortDirection.ASCENDING, viewModel.uiState.value.sortDirection)
         assertEquals(listOf(fakeRepository.audioItem, fakeRepository.videoItem), viewModel.uiState.value.filteredMediaItems)
     }
+
+    @Test
+    fun appThemeColor_defaultsToMonochrome_andMigratesLegacyForest() = runTest {
+        assertEquals(com.android.multimediastudio.data.model.AppThemeColor.MONOCHROME, viewModel.uiState.value.appThemeColor)
+        assertEquals(
+            com.android.multimediastudio.data.model.AppThemeColor.MONOCHROME,
+            com.android.multimediastudio.data.model.AppThemeColor.fromName(null)
+        )
+        assertEquals(
+            com.android.multimediastudio.data.model.AppThemeColor.EMERALD,
+            com.android.multimediastudio.data.model.AppThemeColor.fromName("FOREST")
+        )
+        assertEquals(
+            com.android.multimediastudio.data.model.AppThemeColor.DEFAULT,
+            com.android.multimediastudio.data.model.AppThemeColor.fromName("DEFAULT")
+        )
+    }
 }

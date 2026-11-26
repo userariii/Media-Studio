@@ -160,28 +160,56 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        ThemeOptionButton(
-                            text = "Purple",
-                            selected = appThemeColor == AppThemeColor.DEFAULT,
-                            onClick = { onAppThemeColorSelected(AppThemeColor.DEFAULT) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        ThemeOptionButton(
-                            text = "Ocean",
-                            selected = appThemeColor == AppThemeColor.OCEAN,
-                            onClick = { onAppThemeColorSelected(AppThemeColor.OCEAN) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        ThemeOptionButton(
-                            text = "Forest",
-                            selected = appThemeColor == AppThemeColor.FOREST,
-                            onClick = { onAppThemeColorSelected(AppThemeColor.FOREST) },
-                            modifier = Modifier.weight(1f)
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ThemeOptionButton(
+                                text = "Purple",
+                                selected = appThemeColor == AppThemeColor.DEFAULT,
+                                onClick = { onAppThemeColorSelected(AppThemeColor.DEFAULT) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            ThemeOptionButton(
+                                text = "Ocean",
+                                selected = appThemeColor == AppThemeColor.OCEAN,
+                                onClick = { onAppThemeColorSelected(AppThemeColor.OCEAN) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            ThemeOptionButton(
+                                text = "Emerald",
+                                selected = appThemeColor == AppThemeColor.EMERALD,
+                                onClick = { onAppThemeColorSelected(AppThemeColor.EMERALD) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ThemeOptionButton(
+                                text = "Amber",
+                                selected = appThemeColor == AppThemeColor.AMBER,
+                                onClick = { onAppThemeColorSelected(AppThemeColor.AMBER) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            ThemeOptionButton(
+                                text = "Crimson",
+                                selected = appThemeColor == AppThemeColor.CRIMSON,
+                                onClick = { onAppThemeColorSelected(AppThemeColor.CRIMSON) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            ThemeOptionButton(
+                                text = "Monochrome",
+                                selected = appThemeColor == AppThemeColor.MONOCHROME,
+                                onClick = { onAppThemeColorSelected(AppThemeColor.MONOCHROME) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }
@@ -208,7 +236,7 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Picture-in-Picture (PiP)",
+                                text = "Picture-in-Picture",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.SemiBold
                                 ),
@@ -390,21 +418,21 @@ private fun ThemeOptionButton(
     modifier: Modifier = Modifier
 ) {
     val containerColor = if (selected) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+        MaterialTheme.colorScheme.primaryContainer
     } else {
         Color.Transparent
     }
 
     val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSurface
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     val border = if (selected) {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f))
     } else {
-        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     }
 
     Surface(
@@ -417,10 +445,13 @@ private fun ThemeOptionButton(
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 4.dp)
         ) {
             Text(
                 text = text,
+                maxLines = 1,
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                 )

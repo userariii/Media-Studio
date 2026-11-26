@@ -39,7 +39,7 @@ data class MediaUiState(
     val pendingDeleteIntentSender: IntentSender? = null,
     val isSettingsOpen: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val appThemeColor: AppThemeColor = AppThemeColor.DEFAULT,
+    val appThemeColor: AppThemeColor = AppThemeColor.MONOCHROME,
     val hideSocialMedia: Boolean = true,
     val pipEnabled: Boolean = true
 ) {
@@ -55,7 +55,7 @@ class MediaViewModel(
     private val _uiState = MutableStateFlow(
         MediaUiState(
             themeMode = preferencesRepository?.getInitialThemeMode() ?: ThemeMode.SYSTEM,
-            appThemeColor = preferencesRepository?.getInitialAppThemeColor() ?: AppThemeColor.DEFAULT,
+            appThemeColor = preferencesRepository?.getInitialAppThemeColor() ?: AppThemeColor.MONOCHROME,
             hideSocialMedia = preferencesRepository?.getInitialHideSocialMedia() ?: true,
             pipEnabled = preferencesRepository?.getInitialPipEnabled() ?: true,
             sortOption = preferencesRepository?.getInitialSortOption() ?: MediaSortOption.DATE_MODIFIED,
