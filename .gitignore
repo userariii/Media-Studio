@@ -4,3 +4,9 @@ app/.cxx/
 app/build/
 build/
 local.properties
+*.pk8
+*.x509.pem
+*.pem
+*.p12
+*.jks
+*.keystore

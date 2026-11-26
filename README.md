@@ -143,6 +143,23 @@
    ./gradlew :app:installDebug
    ```
 
+<h3 align="center">APK Signing (Optional Private Keys)</h3>
+
+By default, if no custom keys are present, Gradle uses Android's standard debug keystore for `debug` builds and leaves `release` builds unsigned.
+
+To automatically sign **both `debug` and `release`** APKs with your own private key:
+
+1. **Place a matching key pair** (`*.pk8` private key + `*.pem` or `*.x509.pem` X.509 certificate) in either the repository root (`Media-Studio/`) or `app/` directory. Any filename works (for example, `mykey.pk8` + `mykey.pem`, or `platform.pk8` + `platform.x509.pem`).
+2. **Or generate a new key pair with OpenSSL**:
+   ```bash
+   openssl req -x509 -newkey rsa:4096 -keyout mykey_rsa.pem -out mykey.x509.pem -days 3650 -nodes -subj "/CN=Media Studio"
+   openssl pkcs8 -topk8 -inform PEM -outform DER -in mykey_rsa.pem -out mykey.pk8 -nocrypt
+   rm mykey_rsa.pem
+   ```
+3. **Build as usual** (`./gradlew :app:assembleDebug` or `./gradlew :app:assembleRelease`). Gradle automatically converts the key pair into `app/build/generated/signing/platform.p12` during the build and signs the output APKs.
+
+> All `*.pk8`, `*.x509.pem`, `*.pem`, `*.p12`, `*.jks`, and `*.keystore` files are listed in `.gitignore`, so private keys remain untracked.
+
 ---
 
 <h2 align="center">Author</h2>
