@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="18 18 72 72">
+  <defs>
+    <linearGradient id="playGrad" x1="30" y1="82" x2="80" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E84FF" />
+      <stop offset="38%" stop-color="#3B8DFF" />
+      <stop offset="68%" stop-color="#7481FF" />
+      <stop offset="100%" stop-color="#A576FA" />
+    </linearGradient>
+
+    <radialGradient id="topLeftGlow" cx="34" cy="28" r="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#72A4FF" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#72A4FF" stop-opacity="0" />
+    </radialGradient>
+
+    <radialGradient id="rightTipGlow" cx="80" cy="54" r="26" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A478FA" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#A478FA" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Crisp white squircle card with subtle border for both light & dark GitHub themes -->
+  <rect x="18.4" y="18.4" width="71.2" height="71.2" rx="18" ry="18" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="0.8" />
+
+  <g transform="translate(0.6 0) translate(54 54) scale(0.80) translate(-54 -54)">
+    <!-- Rounded Play Triangle with Blue-to-Lavender Gradient -->
+    <path d="M 30.0,37.78 A 12,12 0 0,1 48.0,27.39 L 76.09,43.61 A 12,12 0 0,1 76.09,64.39 L 48.0,80.61 A 12,12 0 0,1 30.0,70.22 Z" fill="url(#playGrad)" />
+    <path d="M 30.0,37.78 A 12,12 0 0,1 48.0,27.39 L 76.09,43.61 A 12,12 0 0,1 76.09,64.39 L 48.0,80.61 A 12,12 0 0,1 30.0,70.22 Z" fill="url(#topLeftGlow)" />
+    <path d="M 30.0,37.78 A 12,12 0 0,1 48.0,27.39 L 76.09,43.61 A 12,12 0 0,1 76.09,64.39 L 48.0,80.61 A 12,12 0 0,1 30.0,70.22 Z" fill="url(#rightTipGlow)" />
+
+    <!-- 5 Symmetric Audio Waveform Pill Bars -->
+    <rect x="36.5" y="48.7" width="4.2" height="10.6" rx="2.1" ry="2.1" fill="#FFFFFF" />
+    <rect x="43.2" y="45.0" width="4.2" height="18.0" rx="2.1" ry="2.1" fill="#FFFFFF" />
+    <rect x="49.9" y="41.0" width="4.2" height="26.0" rx="2.1" ry="2.1" fill="#FFFFFF" />
+    <rect x="56.6" y="45.0" width="4.2" height="18.0" rx="2.1" ry="2.1" fill="#FFFFFF" />
+    <rect x="63.3" y="48.7" width="4.2" height="10.6" rx="2.1" ry="2.1" fill="#FFFFFF" />
+  </g>
+</svg>
