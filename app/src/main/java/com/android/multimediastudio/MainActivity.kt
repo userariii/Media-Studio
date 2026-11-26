@@ -38,17 +38,16 @@ import com.android.multimediastudio.data.repository.MediaRepositoryImpl
 import com.android.multimediastudio.data.repository.UserPreferencesRepository
 import com.android.multimediastudio.ui.media.MediaDiscoveryScreen
 import com.android.multimediastudio.util.ExternalMediaResolver
-import com.android.multimediastudio.util.VideoThumbnailFetcher
-import com.android.multimediastudio.util.VideoThumbnailKeyer
+import com.android.multimediastudio.util.AppImageLoader
 import coil.Coil
-import coil.ImageLoader
-import coil.disk.DiskCache
-import coil.memory.MemoryCache
 import com.android.multimediastudio.ui.media.MediaViewModel
 import com.android.multimediastudio.ui.player.PlayerUiState
 import com.android.multimediastudio.ui.player.PlayerViewModel
 import com.android.multimediastudio.ui.theme.MultimediaStudioTheme
 import com.android.multimediastudio.util.ImmersiveUtils
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -91,25 +90,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val imageLoader = ImageLoader.Builder(applicationContext)
-            .memoryCache {
-                MemoryCache.Builder(applicationContext)
-                    .maxSizePercent(0.25)
-                    .build()
-            }
-            .diskCache {
-                DiskCache.Builder()
-                    .directory(applicationContext.cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(50L * 1024 * 1024)
-                    .build()
-            }
-            .components {
-                add(VideoThumbnailFetcher.Factory(applicationContext))
-                add(VideoThumbnailKeyer())
-            }
-            .crossfade(false)
-            .build()
-        Coil.setImageLoader(imageLoader)
+        Coil.setImageLoader(AppImageLoader.get(applicationContext))
 
         val filter = IntentFilter(ACTION_PIP_CONTROL)
         ContextCompat.registerReceiver(
@@ -127,17 +108,40 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                playerViewModel.uiState.collect { state ->
-                    val isVideo = state.currentMediaItem?.mediaType == MediaType.VIDEO
-                    val isVideoPlaying = state.isPlaying && isVideo
+                launch {
+                    playerViewModel.uiState
+                        .map { state ->
+                            state.isPlaying && state.currentMediaItem?.mediaType == MediaType.VIDEO
+                        }
+                        .distinctUntilChanged()
+                        .collect { isVideoPlaying ->
+                            if (isVideoPlaying) {
+                                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            } else {
+                                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            }
+                        }
+                }
 
-                    if (isVideoPlaying) {
-                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    } else {
-                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                launch {
+                    combine(
+                        playerViewModel.uiState.map { state ->
+                            PipTriggerKey(
+                                mediaId = state.currentMediaItem?.id,
+                                mediaType = state.currentMediaItem?.mediaType,
+                                isPlaying = state.isPlaying,
+                                isInPipMode = state.isInPipMode,
+                                videoSourceRect = state.videoSourceRect,
+                                videoWidth = state.videoWidth,
+                                videoHeight = state.videoHeight
+                            )
+                        }.distinctUntilChanged(),
+                        mediaViewModel.uiState.map { it.pipEnabled }.distinctUntilChanged()
+                    ) { _, _ ->
+                        playerViewModel.uiState.value
+                    }.collect { state ->
+                        updatePipParams(state)
                     }
-
-                    updatePipParams(state)
                 }
             }
         }
@@ -469,6 +473,16 @@ class MainActivity : ComponentActivity() {
 
         return listOf(action)
     }
+
+    private data class PipTriggerKey(
+        val mediaId: Long?,
+        val mediaType: MediaType?,
+        val isPlaying: Boolean,
+        val isInPipMode: Boolean,
+        val videoSourceRect: Rect?,
+        val videoWidth: Int,
+        val videoHeight: Int
+    )
 
     companion object {
         private const val ACTION_PIP_CONTROL = "com.android.multimediastudio.PIP_CONTROL"

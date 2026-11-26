@@ -33,18 +33,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.android.multimediastudio.util.AudioThumbnailData
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.android.multimediastudio.data.model.MediaItem
 
 @Composable
@@ -58,7 +56,6 @@ fun MiniPlayerBar(
     durationMs: Long = 0L,
     progress: Float = if (durationMs > 0) (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 ) {
-    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -70,6 +67,14 @@ fun MiniPlayerBar(
         (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
         progress.coerceIn(0f, 1f)
+    }
+
+    val imageModel = remember(mediaItem.id, mediaItem.contentUri, mediaItem.thumbnailUri) {
+        if (mediaItem.contentUri != null || mediaItem.thumbnailUri != null) {
+            AudioThumbnailData(mediaItem.contentUri, mediaItem.thumbnailUri)
+        } else {
+            null
+        }
     }
 
     Card(
@@ -118,22 +123,18 @@ fun MiniPlayerBar(
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (mediaItem.thumbnailUri != null) {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(if (isLandscape) 20.dp else 22.dp)
+                        )
+                        if (imageModel != null) {
                             AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(mediaItem.thumbnailUri)
-                                    .crossfade(true)
-                                    .build(),
+                                model = imageModel,
                                 contentDescription = mediaItem.title,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(if (isLandscape) 20.dp else 22.dp)
                             )
                         }
                     }

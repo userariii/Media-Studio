@@ -96,6 +96,11 @@ class PlayerViewModel(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, _uiState.value.isPlaying)
 
+    val mediaQueue: StateFlow<List<MediaItem>> = _uiState
+        .map { it.mediaQueue }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _uiState.value.mediaQueue)
+
     private var positionUpdateJob: Job? = null
 
     private val playerListener = object : Player.Listener {

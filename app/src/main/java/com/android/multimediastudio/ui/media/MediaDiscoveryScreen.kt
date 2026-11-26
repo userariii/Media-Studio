@@ -2,7 +2,6 @@ package com.android.multimediastudio.ui.media
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -144,6 +143,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -171,11 +171,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.android.multimediastudio.MainActivity
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
 import com.android.multimediastudio.data.model.MediaType
+import com.android.multimediastudio.util.AudioThumbnailData
 import com.android.multimediastudio.util.VideoThumbnailData
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -209,7 +209,6 @@ fun MediaDiscoveryScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val playerLayoutState by playerViewModel.playerLayoutState.collectAsState()
-    val playerUiState by playerViewModel.uiState.collectAsState()
 
     if (playerLayoutState.isInPipMode) {
         Box(
@@ -290,6 +289,48 @@ fun MediaDiscoveryScreen(
 
     var playerProgress by remember { mutableFloatStateOf(0f) }
 
+    val currentIsDeviceLandscape by rememberUpdatedState(isDeviceLandscape)
+    val currentMaxPartitions by rememberUpdatedState(scaffoldDirective.maxHorizontalPartitions)
+
+    val onGalleryItemClick: (MediaItem) -> Unit = remember(viewModel, playerViewModel, navigator, context, focusManager, keyboardController, coroutineScope) {
+        { item ->
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            playerViewModel.initializePlayer(context)
+            if (item.mediaType == MediaType.VIDEO) {
+                val isLandscapeStage = currentIsDeviceLandscape ||
+                    (context.findActivity()?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                val queue = viewModel.uiState.value.filteredMediaItems
+                playerViewModel.playMedia(
+                    mediaItem = item,
+                    queue = queue,
+                    playedFromLandscape = isLandscapeStage
+                )
+                playerViewModel.setMediaQueue(queue)
+                playerViewModel.expandPlayer()
+                viewModel.selectMediaItem(item)
+                if (currentMaxPartitions > 1) {
+                    coroutineScope.launch {
+                        navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, item)
+                    }
+                }
+            } else {
+                val currentMediaId = playerViewModel.activeMediaItemId.value
+                if (currentMediaId == item.id) {
+                    playerViewModel.togglePlayPause()
+                } else {
+                    val queue = viewModel.uiState.value.filteredMediaItems
+                    playerViewModel.playMedia(item, queue)
+                    playerViewModel.setMediaQueue(queue)
+                    if (!playerViewModel.isPlaybackActive.value) {
+                        playerViewModel.play()
+                    }
+                }
+                viewModel.selectMediaItem(null)
+            }
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         if (uiState.isSettingsOpen) {
             SettingsScreen(
@@ -314,39 +355,7 @@ fun MediaDiscoveryScreen(
                         viewModel = viewModel,
                         playerViewModel = playerViewModel,
                         playerProgress = playerProgress,
-                        onItemClick = { item ->
-                            focusManager.clearFocus(force = true)
-                            keyboardController?.hide()
-                            playerViewModel.initializePlayer(context)
-                            if (item.mediaType == MediaType.VIDEO) {
-                                val isLandscapeStage = isDeviceLandscape ||
-                                        (context.findActivity()?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE)
-                                playerViewModel.playMedia(
-                                    mediaItem = item,
-                                    queue = viewModel.uiState.value.filteredMediaItems,
-                                    playedFromLandscape = isLandscapeStage
-                                )
-                                playerViewModel.setMediaQueue(viewModel.uiState.value.filteredMediaItems)
-                                playerViewModel.expandPlayer()
-                                viewModel.selectMediaItem(item)
-                                if (scaffoldDirective.maxHorizontalPartitions > 1) {
-                                    coroutineScope.launch {
-                                        navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, item)
-                                    }
-                                }
-                            } else {
-                                if (playerLayoutState.currentMediaItem?.id == item.id) {
-                                    playerViewModel.togglePlayPause()
-                                } else {
-                                    playerViewModel.playMedia(item, viewModel.uiState.value.filteredMediaItems)
-                                    playerViewModel.setMediaQueue(viewModel.uiState.value.filteredMediaItems)
-                                    if (!playerLayoutState.isPlaying) {
-                                        playerViewModel.play()
-                                    }
-                                }
-                                viewModel.selectMediaItem(null)
-                            }
-                        }
+                        onItemClick = onGalleryItemClick
                     )
                 }
             },
@@ -355,7 +364,7 @@ fun MediaDiscoveryScreen(
                     val selectedItem = navigator.currentDestination?.contentKey ?: uiState.selectedMediaItem
                     if (selectedItem != null) {
                         val activeItem = playerLayoutState.currentMediaItem ?: selectedItem
-                        val currentQueue = playerUiState.mediaQueue
+                        val currentQueue by playerViewModel.mediaQueue.collectAsState()
                         val effectiveQueue = when {
                             uiState.filteredMediaItems.any { it.id == activeItem.id } -> uiState.filteredMediaItems
                             currentQueue.any { it.id == activeItem.id } -> currentQueue
@@ -408,7 +417,7 @@ fun MediaDiscoveryScreen(
         val isPlayerFullscreen = playerLayoutState.isExpanded || uiState.selectedMediaItem != null
 
         if (activePlayerItem != null && isPlayerFullscreen && scaffoldDirective.maxHorizontalPartitions == 1) {
-            val currentQueue = playerUiState.mediaQueue
+            val currentQueue by playerViewModel.mediaQueue.collectAsState()
             val effectiveQueue = when {
                 uiState.filteredMediaItems.any { it.id == activePlayerItem.id } -> uiState.filteredMediaItems
                 currentQueue.any { it.id == activePlayerItem.id } -> currentQueue
@@ -539,10 +548,10 @@ fun MediaGalleryPane(
     val uiState by viewModel.uiState.collectAsState()
     val activeMediaItemId by playerViewModel.activeMediaItemId.collectAsState()
     val isPlaybackActive by playerViewModel.isPlaybackActive.collectAsState()
-    val playerUiState by playerViewModel.uiState.collectAsState()
-    val isMiniPlayerActive = playerUiState.currentMediaItem != null &&
-            !playerUiState.isExpanded &&
-            playerUiState.currentMediaItem?.mediaType == MediaType.AUDIO
+    val playerLayoutState by playerViewModel.playerLayoutState.collectAsState()
+    val isMiniPlayerActive = playerLayoutState.currentMediaItem != null &&
+            !playerLayoutState.isExpanded &&
+            playerLayoutState.currentMediaItem?.mediaType == MediaType.AUDIO
 
     var isSearchExpanded by rememberSaveable { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
@@ -1027,19 +1036,21 @@ fun MediaGalleryPane(
                                     )
                                 }
 
-                                val onRowItemClick: (MediaItem) -> Unit = remember(uiState.isSelectionMode, onItemClick) {
+                                val currentOnItemClick by rememberUpdatedState(onItemClick)
+
+                                val onRowItemClick: (MediaItem) -> Unit = remember(viewModel) {
                                     { item ->
-                                        if (uiState.isSelectionMode) {
+                                        if (viewModel.uiState.value.isSelectionMode) {
                                             viewModel.toggleItemSelection(item)
                                         } else {
-                                            onItemClick(item)
+                                            currentOnItemClick(item)
                                         }
                                     }
                                 }
 
-                                val onRowItemLongClick: (MediaItem) -> Unit = remember(uiState.isSelectionMode) {
+                                val onRowItemLongClick: (MediaItem) -> Unit = remember(viewModel) {
                                     { item ->
-                                        if (!uiState.isSelectionMode) {
+                                        if (!viewModel.uiState.value.isSelectionMode) {
                                             viewModel.enterSelectionMode(item)
                                         } else {
                                             viewModel.toggleItemSelection(item)
@@ -1047,22 +1058,23 @@ fun MediaGalleryPane(
                                     }
                                 }
 
-                                val onRowPlayClick: (MediaItem, Boolean) -> Unit = remember(onItemClick) {
-                                    { item, isCurrent ->
+                                val onRowPlayClick: (MediaItem) -> Unit = remember(viewModel, playerViewModel, context) {
+                                    { item ->
                                         playerViewModel.initializePlayer(context)
                                         if (item.mediaType == MediaType.AUDIO) {
+                                            val isCurrent = playerViewModel.activeMediaItemId.value == item.id
                                             if (isCurrent) {
                                                 playerViewModel.play()
                                             } else {
                                                 playerViewModel.playMedia(item, viewModel.uiState.value.filteredMediaItems)
                                             }
                                         } else {
-                                            onItemClick(item)
+                                            currentOnItemClick(item)
                                         }
                                     }
                                 }
 
-                                val onRowPauseClick: () -> Unit = remember {
+                                val onRowPauseClick: () -> Unit = remember(playerViewModel) {
                                     { playerViewModel.pause() }
                                 }
 
@@ -1093,7 +1105,7 @@ fun MediaGalleryPane(
                                                 showMediaTypeChip = showMediaTypeChip,
                                                 onItemClick = remember(item, onRowItemClick) { { onRowItemClick(item) } },
                                                 onItemLongClick = remember(item, onRowItemLongClick) { { onRowItemLongClick(item) } },
-                                                onPlayClick = remember(item, isCurrentItem, onRowPlayClick) { { onRowPlayClick(item, isCurrentItem) } },
+                                                onPlayClick = remember(item, onRowPlayClick) { { onRowPlayClick(item) } },
                                                 onPauseClick = onRowPauseClick
                                             )
                                         }
@@ -1123,7 +1135,7 @@ fun MediaGalleryPane(
                                                 showMediaTypeChip = showMediaTypeChip,
                                                 onItemClick = remember(item, onRowItemClick) { { onRowItemClick(item) } },
                                                 onItemLongClick = remember(item, onRowItemLongClick) { { onRowItemLongClick(item) } },
-                                                onPlayClick = remember(item, isCurrentItem, onRowPlayClick) { { onRowPlayClick(item, isCurrentItem) } },
+                                                onPlayClick = remember(item, onRowPlayClick) { { onRowPlayClick(item) } },
                                                 onPauseClick = onRowPauseClick
                                             )
                                         }
@@ -1262,6 +1274,15 @@ private fun FloatingFilterItem(
     }
 }
 
+private val MediaCardShape = RoundedCornerShape(16.dp)
+private val MediaThumbShape = RoundedCornerShape(12.dp)
+private val MediaChipShape = RoundedCornerShape(8.dp)
+private val MediaGridChipShape = RoundedCornerShape(6.dp)
+private val GridCardScrimBrush = Brush.verticalGradient(
+    colors = listOf(Color.Transparent, Color(0x80000000))
+)
+private val GridDurationBadgeColor = Color(0xBF000000)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaItemRow(
@@ -1290,11 +1311,12 @@ fun MediaItemRow(
         }
     }
 
-    val metaText = remember(item.id, item.formattedDuration, item.formattedSize, item.resolution) {
-        "${item.formattedDuration} • ${item.formattedSize}" + if (item.resolution != null) " • ${item.resolution}" else ""
+    val metaText = remember(item.id, item.durationMs, item.sizeBytes, item.resolution) {
+        val base = "${item.getFormattedDuration()} • ${item.getFormattedSize()}"
+        if (item.resolution != null) "$base • ${item.resolution}" else base
     }
 
-    val subtitle = remember(item.id, item.artist, item.album) {
+    val subtitle = remember(item.id, item.mediaType, item.artist, item.album) {
         item.getFormattedSubtitle()
     }
 
@@ -1305,7 +1327,7 @@ fun MediaItemRow(
                 onClick = onItemClick,
                 onLongClick = onItemLongClick
             ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MediaCardShape,
         border = cardBorder,
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -1333,7 +1355,7 @@ fun MediaItemRow(
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MediaThumbShape)
                     .background(
                         if (item.mediaType == MediaType.VIDEO)
                             MaterialTheme.colorScheme.secondaryContainer
@@ -1357,7 +1379,11 @@ fun MediaItemRow(
                         val videoUri = item.thumbnailUri ?: item.contentUri
                         if (videoUri != null && videoUri != Uri.EMPTY) VideoThumbnailData(videoUri, item.durationMs) else null
                     } else {
-                        item.thumbnailUri
+                        if (item.contentUri != null || item.thumbnailUri != null) {
+                            AudioThumbnailData(item.contentUri, item.thumbnailUri)
+                        } else {
+                            null
+                        }
                     }
                 }
 
@@ -1477,7 +1503,7 @@ fun MediaItemRow(
                     }
                 } else if (showMediaTypeChip) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MediaChipShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
                         Text(
@@ -1521,7 +1547,7 @@ fun MediaItemGridCard(
         }
     }
 
-    val subtitle = remember(item.id, item.artist, item.album) {
+    val subtitle = remember(item.id, item.mediaType, item.artist, item.album) {
         item.getFormattedSubtitle()
     }
 
@@ -1540,7 +1566,7 @@ fun MediaItemGridCard(
                 onClick = onItemClick,
                 onLongClick = onItemLongClick
             ),
-        shape = RoundedCornerShape(16.dp),
+        shape = MediaCardShape,
         border = cardBorder,
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -1579,7 +1605,11 @@ fun MediaItemGridCard(
                         val videoUri = item.thumbnailUri ?: item.contentUri
                         if (videoUri != null && videoUri != Uri.EMPTY) VideoThumbnailData(videoUri, item.durationMs) else null
                     } else {
-                        item.thumbnailUri
+                        if (item.contentUri != null || item.thumbnailUri != null) {
+                            AudioThumbnailData(item.contentUri, item.thumbnailUri)
+                        } else {
+                            null
+                        }
                     }
                 }
 
@@ -1595,11 +1625,7 @@ fun MediaItemGridCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))
-                            )
-                        )
+                        .background(GridCardScrimBrush)
                 )
 
                 Surface(
@@ -1634,8 +1660,8 @@ fun MediaItemGridCard(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color.Black.copy(alpha = 0.75f),
+                    shape = MediaGridChipShape,
+                    color = GridDurationBadgeColor,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(6.dp)
@@ -1677,7 +1703,7 @@ fun MediaItemGridCard(
                         }
                     } else if (showMediaTypeChip) {
                         Surface(
-                            shape = RoundedCornerShape(6.dp),
+                            shape = MediaGridChipShape,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                             Text(
@@ -1741,10 +1767,12 @@ fun MediaItemGridCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    val tag = if (item.mediaType == MediaType.AUDIO) {
-                        ""
-                    } else {
-                        item.resolution ?: item.cleanArtist ?: item.mimeType.substringAfter('/')
+                    val tag = remember(item.id, item.mediaType, item.resolution, item.artist, item.mimeType) {
+                        if (item.mediaType == MediaType.AUDIO) {
+                            ""
+                        } else {
+                            item.resolution ?: item.cleanArtist ?: item.mimeType.substringAfter('/')
+                        }
                     }
                     Text(
                         text = tag,

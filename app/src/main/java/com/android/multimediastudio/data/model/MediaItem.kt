@@ -38,6 +38,17 @@ fun sanitizeAlbum(album: String?): String? {
     }
 }
 
+private val SOCIAL_APP_KEYWORDS = arrayOf(
+    "whatsapp", "telegram", "facebook", "instagram", "snapchat",
+    "tiktok", "twitter", "messenger", "viber", "signal", "line"
+)
+
+private val WA_MEDIA_REGEX = Regex("(vid|aud|ptt|img|doc)-\\d{8}-wa\\d+", RegexOption.IGNORE_CASE)
+
+private val REEL_KEYWORDS = arrayOf(
+    "shorts", "short", "reels", "reel", "tiktok", "status", "stories", "story"
+)
+
 @Parcelize
 data class MediaItem(
     val id: Long,
@@ -60,27 +71,31 @@ data class MediaItem(
     val cleanArtist: String? get() = sanitizeArtist(artist)
     val cleanAlbum: String? get() = sanitizeAlbum(album)
 
-    fun isSocialMedia(): Boolean {
-        val combinedText = buildString {
-            append(title.lowercase(Locale.ROOT)).append(" ")
-            displayName?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
-            artist?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
-            album?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
-            relativePath?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
-            filePath?.let { append(it.lowercase(Locale.ROOT)).append(" ") }
+    private fun containsAnyKeyword(keywords: Array<String>, includeArtistAndAlbum: Boolean): Boolean {
+        for (keyword in keywords) {
+            if (title.contains(keyword, ignoreCase = true) ||
+                (displayName != null && displayName.contains(keyword, ignoreCase = true)) ||
+                (relativePath != null && relativePath.contains(keyword, ignoreCase = true)) ||
+                (filePath != null && filePath.contains(keyword, ignoreCase = true)) ||
+                (includeArtistAndAlbum && (
+                    (artist != null && artist.contains(keyword, ignoreCase = true)) ||
+                    (album != null && album.contains(keyword, ignoreCase = true))
+                ))
+            ) {
+                return true
+            }
         }
+        return false
+    }
 
-        val socialAppKeywords = listOf(
-            "whatsapp", "telegram", "facebook", "instagram", "snapchat",
-            "tiktok", "twitter", "messenger", "viber", "signal", "line"
-        )
-
-        if (socialAppKeywords.any { combinedText.contains(it) }) {
+    fun isSocialMedia(): Boolean {
+        if (containsAnyKeyword(SOCIAL_APP_KEYWORDS, includeArtistAndAlbum = true)) {
             return true
         }
 
-        val waPattern = Regex("(vid|aud|ptt|img|doc)-\\d{8}-wa\\d+", RegexOption.IGNORE_CASE)
-        if (waPattern.containsMatchIn(title) || (displayName != null && waPattern.containsMatchIn(displayName))) {
+        if (WA_MEDIA_REGEX.containsMatchIn(title) ||
+            (displayName != null && WA_MEDIA_REGEX.containsMatchIn(displayName))
+        ) {
             return true
         }
 
@@ -90,23 +105,17 @@ data class MediaItem(
     fun isReelOrShort(): Boolean {
         if (mediaType != MediaType.VIDEO) return false
         val res = resolution
-        if (!res.isNullOrBlank() && res.contains("x")) {
-            val parts = res.split("x")
-            val w = parts.getOrNull(0)?.toIntOrNull() ?: 0
-            val h = parts.getOrNull(1)?.toIntOrNull() ?: 0
-            if (w > 0 && h > 0) {
-                return h > w
+        if (!res.isNullOrBlank()) {
+            val xIndex = res.indexOf('x')
+            if (xIndex > 0 && xIndex < res.length - 1) {
+                val w = res.substring(0, xIndex).toIntOrNull() ?: 0
+                val h = res.substring(xIndex + 1).toIntOrNull() ?: 0
+                if (w > 0 && h > 0) {
+                    return h > w
+                }
             }
         }
-        val combined = buildString {
-            append(title).append(" ")
-            displayName?.let { append(it).append(" ") }
-            relativePath?.let { append(it).append(" ") }
-            filePath?.let { append(it).append(" ") }
-        }.lowercase(Locale.ROOT)
-
-        val reelKeywords = listOf("shorts", "short", "reels", "reel", "tiktok", "status", "stories", "story")
-        return reelKeywords.any { combined.contains(it) }
+        return containsAnyKeyword(REEL_KEYWORDS, includeArtistAndAlbum = false)
     }
 
     val formattedDuration: String @JvmName("getFormattedDurationProp") get() = getFormattedDuration()
@@ -134,15 +143,21 @@ data class MediaItem(
     }
 
     fun getFormattedDuration(): String {
-        if (durationMs <= 0) return "00:00"
-        val totalSeconds = durationMs / 1000
-        val seconds = totalSeconds % 60
-        val minutes = (totalSeconds / 60) % 60
-        val hours = totalSeconds / 3600
-        return if (hours > 0) {
-            String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+        if (durationMs <= 0L) return "00:00"
+        val totalSeconds = durationMs / 1000L
+        val seconds = (totalSeconds % 60L).toInt()
+        val minutes = ((totalSeconds / 60L) % 60L).toInt()
+        val hours = totalSeconds / 3600L
+        return buildString(8) {
+            if (hours > 0L) {
+                append(hours)
+                append(':')
+            }
+            if (minutes < 10) append('0')
+            append(minutes)
+            append(':')
+            if (seconds < 10) append('0')
+            append(seconds)
         }
     }
 

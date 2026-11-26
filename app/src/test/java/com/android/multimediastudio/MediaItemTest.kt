@@ -190,4 +190,62 @@ class MediaItemTest {
         )
         assertNull(videoItem.getFormattedSubtitle())
     }
+
+    @Test
+    fun isSocialMedia_detectsKeywordsAndWhatsAppFilenames() {
+        val whatsappFile = MediaItem(
+            id = 1L,
+            title = "VID-20260101-WA0001.mp4",
+            mediaType = MediaType.VIDEO
+        )
+        val telegramFile = MediaItem(
+            id = 2L,
+            title = "clip",
+            relativePath = "Movies/Telegram/",
+            mediaType = MediaType.VIDEO
+        )
+        val regularMovie = MediaItem(
+            id = 3L,
+            title = "Nature Documentary",
+            relativePath = "Movies/",
+            mediaType = MediaType.VIDEO
+        )
+
+        org.junit.Assert.assertTrue(whatsappFile.isSocialMedia())
+        org.junit.Assert.assertTrue(telegramFile.isSocialMedia())
+        org.junit.Assert.assertFalse(regularMovie.isSocialMedia())
+    }
+
+    @Test
+    fun isReelOrShort_usesResolutionAndKeywordsCorrectly() {
+        val portraitVideo = MediaItem(
+            id = 1L,
+            title = "Clip",
+            resolution = "1080x1920",
+            mediaType = MediaType.VIDEO
+        )
+        val landscapeVideo = MediaItem(
+            id = 2L,
+            title = "Short Film",
+            resolution = "1920x1080",
+            mediaType = MediaType.VIDEO
+        )
+        val keywordReel = MediaItem(
+            id = 3L,
+            title = "Holiday_Reels",
+            resolution = null,
+            mediaType = MediaType.VIDEO
+        )
+        val audioFile = MediaItem(
+            id = 4L,
+            title = "Reels Audio",
+            resolution = "1080x1920",
+            mediaType = MediaType.AUDIO
+        )
+
+        org.junit.Assert.assertTrue(portraitVideo.isReelOrShort())
+        org.junit.Assert.assertFalse(landscapeVideo.isReelOrShort())
+        org.junit.Assert.assertTrue(keywordReel.isReelOrShort())
+        org.junit.Assert.assertFalse(audioFile.isReelOrShort())
+    }
 }
