@@ -1,6 +1,7 @@
 package com.android.multimediastudio
 
 import com.android.multimediastudio.data.datasource.DeleteResult
+import com.android.multimediastudio.data.datasource.MediaChangeEvent
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
 import com.android.multimediastudio.data.model.MediaType
@@ -8,7 +9,7 @@ import com.android.multimediastudio.data.repository.MediaRepository
 import com.android.multimediastudio.ui.media.MediaViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -28,7 +29,8 @@ class FakeMediaRepository : MediaRepository {
     override val mediaStream: Flow<List<MediaItem>> = _mediaState
 
     var shouldThrowError = false
-    var refreshDelayMs = 0L
+    var observeStartedCount = 0
+    var syncCallCount = 0
 
     val videoItem = MediaItem(
         id = 10L,
@@ -62,15 +64,30 @@ class FakeMediaRepository : MediaRepository {
         if (shouldThrowError) {
             throw RuntimeException("Permission or storage error")
         }
-        _mediaState.value = currentItems
-        return filterMedia(currentItems, filter)
+        val snapshot = currentItems.toList()
+        _mediaState.value = snapshot
+        return filterMedia(snapshot, filter)
     }
 
-    override suspend fun refresh(filter: MediaFilter): List<MediaItem> {
-        if (refreshDelayMs > 0L) {
-            delay(refreshDelayMs)
+    override suspend fun syncMediaChanges(event: MediaChangeEvent): List<MediaItem> {
+        syncCallCount++
+        if (shouldThrowError) {
+            throw RuntimeException("Sync error")
         }
-        return scanMedia(filter)
+        val snapshot = currentItems.toList()
+        _mediaState.value = snapshot
+        return snapshot
+    }
+
+    override suspend fun observeMediaChanges() {
+        observeStartedCount++
+        awaitCancellation()
+    }
+
+    fun emitExternalLibraryChange(items: List<MediaItem>) {
+        currentItems.clear()
+        currentItems.addAll(items)
+        _mediaState.value = items.toList()
     }
 
     override fun filterMedia(
@@ -91,7 +108,7 @@ class FakeMediaRepository : MediaRepository {
 
     override suspend fun deleteMediaFiles(items: List<MediaItem>): DeleteResult {
         currentItems.removeAll(items)
-        _mediaState.value = currentItems
+        _mediaState.value = currentItems.toList()
         return DeleteResult.Success
     }
 }
@@ -116,23 +133,24 @@ class MediaViewModelTest {
     }
 
     @Test
-    fun permissionChanged_whenGranted_loadsMedia() = runTest {
+    fun permissionChanged_whenGranted_loadsMediaAndStartsObserver() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         val state = viewModel.uiState.value
         assertTrue(state.permissionGranted)
         assertEquals(2, state.allMediaItems.size)
         assertEquals(2, state.filteredMediaItems.size)
+        assertEquals(1, fakeRepository.observeStartedCount)
     }
 
     @Test
     fun filterChanged_updatesFilteredMediaItems() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         viewModel.setFilter(MediaFilter.VIDEO)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         val state = viewModel.uiState.value
         assertEquals(MediaFilter.VIDEO, state.selectedFilter)
@@ -143,10 +161,10 @@ class MediaViewModelTest {
     @Test
     fun searchQueryChanged_filtersByTitle() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         viewModel.setSearchQuery("Acoustic")
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         val state = viewModel.uiState.value
         assertEquals("Acoustic", state.searchQuery)
@@ -179,7 +197,7 @@ class MediaViewModelTest {
     @Test
     fun selectionMode_enterAndExit() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         viewModel.enterSelectionMode(fakeRepository.videoItem)
         var state = viewModel.uiState.value
@@ -196,7 +214,7 @@ class MediaViewModelTest {
     @Test
     fun selectionMode_selectAllAndDeselectAll() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         viewModel.selectAll()
         var state = viewModel.uiState.value
@@ -212,11 +230,11 @@ class MediaViewModelTest {
     @Test
     fun deleteSelectedItems_removesItemsAndExitsSelectionMode() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         viewModel.enterSelectionMode(fakeRepository.videoItem)
         viewModel.deleteSelectedItems()
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         val state = viewModel.uiState.value
         assertFalse(state.isSelectionMode)
@@ -228,75 +246,61 @@ class MediaViewModelTest {
     fun loadMedia_whenErrorOccurs_updatesErrorState() = runTest {
         fakeRepository.shouldThrowError = true
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        val state = viewModel.uiState.value
-        assertFalse(state.isLoading)
-        assertEquals("Permission or storage error", state.errorMessage)
-    }
-
-    @Test
-    fun refresh_reloadsMediaAndUpdatesState() = runTest {
-        viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        fakeRepository.currentItems.clear()
-        viewModel.refresh()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        val state = viewModel.uiState.value
-        assertEquals(0, state.allMediaItems.size)
-        assertFalse(state.isRefreshing)
-    }
-
-    @Test
-    fun refresh_setsIsRefreshingTrueDuringRefreshAndFalseAfterCompletion() = runTest {
-        viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        fakeRepository.refreshDelayMs = 500L
-        viewModel.refresh()
         testDispatcher.scheduler.runCurrent()
 
-        assertTrue(viewModel.uiState.value.isRefreshing)
-
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertFalse(viewModel.uiState.value.isRefreshing)
-    }
-
-    @Test
-    fun refresh_whenErrorOccurs_resetsIsRefreshingToFalse() = runTest {
-        viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        fakeRepository.shouldThrowError = true
-        viewModel.refresh()
-        testDispatcher.scheduler.advanceUntilIdle()
-
         val state = viewModel.uiState.value
-        assertFalse(state.isRefreshing)
         assertFalse(state.isLoading)
         assertEquals("Permission or storage error", state.errorMessage)
     }
 
     @Test
-    fun refresh_preservesSearchQueryAndFilterSelection() = runTest {
+    fun externalMediaChanges_automaticallyUpdateListsPreservingFilterAndSearch() = runTest {
         viewModel.onPermissionChanged(true)
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
         viewModel.setFilter(MediaFilter.AUDIO)
         viewModel.setSearchQuery("Acoustic")
-        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.runCurrent()
 
-        viewModel.refresh()
-        testDispatcher.scheduler.advanceUntilIdle()
+        val newMatchingAudio = MediaItem(
+            id = 30L,
+            title = "Acoustic Live",
+            mediaType = MediaType.AUDIO
+        )
+        val nonMatchingVideo = MediaItem(
+            id = 40L,
+            title = "Acoustic Video",
+            mediaType = MediaType.VIDEO
+        )
+        fakeRepository.emitExternalLibraryChange(
+            listOf(fakeRepository.videoItem, fakeRepository.audioItem, newMatchingAudio, nonMatchingVideo)
+        )
+        testDispatcher.scheduler.runCurrent()
 
         val state = viewModel.uiState.value
+        assertEquals(4, state.allMediaItems.size)
         assertEquals(MediaFilter.AUDIO, state.selectedFilter)
         assertEquals("Acoustic", state.searchQuery)
-        assertEquals(1, state.filteredMediaItems.size)
-        assertEquals("Acoustic Audio", state.filteredMediaItems.first().title)
+        assertEquals(2, state.filteredMediaItems.size)
+        assertTrue(state.filteredMediaItems.all { it.mediaType == MediaType.AUDIO })
+    }
+
+    @Test
+    fun syncMediaChanges_updatesAddedAndDeletedFilesIncrementally() = runTest {
+        viewModel.onPermissionChanged(true)
+        testDispatcher.scheduler.runCurrent()
+
+        fakeRepository.currentItems.remove(fakeRepository.videoItem)
+        val modifiedAudio = fakeRepository.audioItem.copy(title = "Acoustic Audio (Remastered)")
+        fakeRepository.currentItems[0] = modifiedAudio
+
+        viewModel.syncMediaChanges()
+        testDispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, fakeRepository.syncCallCount)
+        assertEquals(1, state.allMediaItems.size)
+        assertEquals("Acoustic Audio (Remastered)", state.filteredMediaItems.first().title)
     }
 
     @Test

@@ -117,9 +117,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -864,109 +861,28 @@ fun MediaGalleryPane(
             ) {
             if (uiState.isPermissionChecked && !uiState.permissionGranted) {
                 val scrollState = rememberScrollState()
-                val pullToRefreshState = rememberPullToRefreshState()
-                PullToRefreshBox(
-                    isRefreshing = uiState.isRefreshing,
-                    onRefresh = {
-                        if (scrollState.value == 0) {
-                            viewModel.refresh()
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    state = pullToRefreshState,
-                    indicator = {
-                        if (uiState.isRefreshing || pullToRefreshState.distanceFraction > 0f) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 16.dp),
-                                contentAlignment = Alignment.TopCenter
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    shadowElevation = 4.dp,
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(24.dp),
-                                            color = MaterialTheme.colorScheme.primary,
-                                            strokeWidth = 2.5.dp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scrollState)
-                    ) {
-                        PermissionRequiredCard(
-                            onRequestPermission = {
-                                permissionLauncher.launch(PermissionUtils.getRequiredPermissions())
-                            }
-                        )
-                    }
+                    PermissionRequiredCard(
+                        onRequestPermission = {
+                            permissionLauncher.launch(PermissionUtils.getRequiredPermissions())
+                        }
+                    )
                 }
             } else {
 
                 val gridState = rememberLazyGridState()
                 val listState = rememberLazyListState()
 
-                val pullToRefreshState = rememberPullToRefreshState()
-                PullToRefreshBox(
-                    isRefreshing = uiState.isRefreshing,
-                    onRefresh = {
-                        val atTop = if (uiState.isGridView) {
-                            gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0
-                        } else {
-                            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-                        }
-                        if (atTop) {
-                            viewModel.refresh()
-                        }
-                    },
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    state = pullToRefreshState,
-                    indicator = {
-                        if (uiState.isRefreshing || pullToRefreshState.distanceFraction > 0f) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 16.dp),
-                                contentAlignment = Alignment.TopCenter
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    shadowElevation = 4.dp,
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(24.dp),
-                                            color = MaterialTheme.colorScheme.primary,
-                                            strokeWidth = 2.5.dp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                        .weight(1f)
                 ) {
-                    val isInitialLoading = uiState.isLoading || (uiState.allMediaItems.isEmpty() && uiState.isRefreshing)
+                    val isInitialLoading = uiState.isLoading
                     when {
                         isInitialLoading -> {
                             Box(

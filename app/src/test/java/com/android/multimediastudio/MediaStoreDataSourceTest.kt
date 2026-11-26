@@ -1,7 +1,10 @@
 package com.android.multimediastudio
 
+import com.android.multimediastudio.data.datasource.MediaChangeEvent
 import com.android.multimediastudio.data.datasource.extractMediaTitle
+import com.android.multimediastudio.data.datasource.mergeMediaChangeEvents
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MediaStoreDataSourceTest {
@@ -71,5 +74,23 @@ class MediaStoreDataSourceTest {
             fallback = "Unknown Video"
         )
         assertEquals("Some Raw Title", result)
+    }
+
+    @Test
+    fun mergeMediaChangeEvents_combinesUriIdsAndPromotesCollectionFlags() {
+        val a = MediaChangeEvent.UriChanges(videoIds = setOf(1L), audioIds = setOf(10L))
+        val b = MediaChangeEvent.UriChanges(videoIds = setOf(2L), refreshAudioCollection = true)
+
+        val merged = mergeMediaChangeEvents(a, b) as MediaChangeEvent.UriChanges
+        assertEquals(setOf(1L, 2L), merged.videoIds)
+        assertTrue(merged.audioIds.isEmpty())
+        assertTrue(merged.refreshAudioCollection)
+    }
+
+    @Test
+    fun mergeMediaChangeEvents_fullSyncNeededOverridesUriChanges() {
+        val a = MediaChangeEvent.UriChanges(videoIds = setOf(1L))
+        val merged = mergeMediaChangeEvents(a, MediaChangeEvent.FullSyncNeeded)
+        assertEquals(MediaChangeEvent.FullSyncNeeded, merged)
     }
 }

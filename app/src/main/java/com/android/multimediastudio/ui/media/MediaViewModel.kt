@@ -5,12 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.android.multimediastudio.data.datasource.DeleteResult
+import com.android.multimediastudio.data.model.AppThemeColor
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
-import com.android.multimediastudio.data.model.AppThemeColor
 import com.android.multimediastudio.data.model.ThemeMode
 import com.android.multimediastudio.data.repository.MediaRepository
 import com.android.multimediastudio.data.repository.UserPreferencesRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +20,6 @@ import kotlinx.coroutines.launch
 
 data class MediaUiState(
     val isLoading: Boolean = true,
-    val isRefreshing: Boolean = false,
     val permissionGranted: Boolean = false,
     val isPermissionChecked: Boolean = false,
     val selectedFilter: MediaFilter = MediaFilter.ALL,
@@ -56,6 +56,9 @@ class MediaViewModel(
         )
     )
     val uiState: StateFlow<MediaUiState> = _uiState.asStateFlow()
+
+    private var observationJob: Job? = null
+    private var hasLoadedInitialMedia = false
 
     init {
         preferencesRepository?.let { prefs ->
@@ -111,6 +114,7 @@ class MediaViewModel(
     }
 
     fun onPermissionChanged(isGranted: Boolean) {
+        val wasGranted = _uiState.value.permissionGranted
         _uiState.update {
             it.copy(
                 permissionGranted = isGranted,
@@ -119,8 +123,27 @@ class MediaViewModel(
             )
         }
         if (isGranted) {
-            loadMedia()
+            startObservingMediaChanges()
+            if (!wasGranted || !hasLoadedInitialMedia) {
+                loadMedia()
+            } else {
+                syncMediaChanges()
+            }
+        } else {
+            stopObservingMediaChanges()
         }
+    }
+
+    private fun startObservingMediaChanges() {
+        if (observationJob?.isActive == true) return
+        observationJob = viewModelScope.launch {
+            repository.observeMediaChanges()
+        }
+    }
+
+    private fun stopObservingMediaChanges() {
+        observationJob?.cancel()
+        observationJob = null
     }
 
     fun setFilter(filter: MediaFilter) {
@@ -245,7 +268,6 @@ class MediaViewModel(
                             selectedItemKeys = emptySet()
                         )
                     }
-                    loadMedia()
                 }
                 is DeleteResult.RequiresPermission -> {
                     _uiState.update {
@@ -275,25 +297,25 @@ class MediaViewModel(
                 selectedItemKeys = emptySet()
             )
         }
-        loadMedia()
+        syncMediaChanges()
     }
 
     fun clearDeleteIntentSender() {
         _uiState.update { it.copy(pendingDeleteIntentSender = null) }
     }
 
-    fun refresh() {
+    fun loadMedia() {
         if (!_uiState.value.permissionGranted) return
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
-                    isRefreshing = true,
                     isLoading = it.allMediaItems.isEmpty(),
                     errorMessage = null
                 )
             }
             try {
-                repository.refresh(_uiState.value.selectedFilter)
+                repository.scanMedia(_uiState.value.selectedFilter)
+                hasLoadedInitialMedia = true
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -301,18 +323,24 @@ class MediaViewModel(
                     )
                 }
             } finally {
-                _uiState.update {
-                    it.copy(
-                        isRefreshing = false,
-                        isLoading = false
-                    )
-                }
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
 
-    fun loadMedia() {
-        refresh()
+    fun syncMediaChanges() {
+        if (!_uiState.value.permissionGranted) return
+        if (!hasLoadedInitialMedia) {
+            loadMedia()
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.syncMediaChanges()
+            } catch (_: Exception) {
+                // Keep existing library state intact on transient background sync errors
+            }
+        }
     }
 
     fun setThemeMode(mode: ThemeMode) {

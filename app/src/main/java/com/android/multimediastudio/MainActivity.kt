@@ -217,6 +217,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         playerViewModel.setAppInForeground(true)
+        mediaViewModel.syncMediaChanges()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

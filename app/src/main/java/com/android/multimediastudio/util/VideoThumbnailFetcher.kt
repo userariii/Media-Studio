@@ -82,6 +82,11 @@ internal object ThumbnailNegativeCache {
     fun markFailed(key: String) {
         cache.put(key, true)
     }
+
+    fun invalidate(uriKey: String) {
+        cache.remove("video_thumb_$uriKey")
+        cache.remove("audio_art_$uriKey")
+    }
 }
 
 object AppImageLoader {
