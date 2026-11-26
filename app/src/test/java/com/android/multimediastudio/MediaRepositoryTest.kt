@@ -5,7 +5,9 @@ import com.android.multimediastudio.data.datasource.MediaChangeEvent
 import com.android.multimediastudio.data.datasource.MediaStoreDataSource
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.MediaSortOption
 import com.android.multimediastudio.data.model.MediaType
+import com.android.multimediastudio.data.model.SortDirection
 import com.android.multimediastudio.data.repository.MediaRepositoryImpl
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -198,5 +200,63 @@ class MediaRepositoryTest {
         assertEquals(setOf(5L), merged.audioIds)
 
         observeJob.cancel()
+    }
+
+    @Test
+    fun filterMedia_sortsByAllOptionsAndDirections() {
+        val itemA = MediaItem(
+            id = 1L,
+            title = "alpha",
+            durationMs = 300_000L,
+            sizeBytes = 500L,
+            dateAdded = 10L,
+            dateModified = 30L,
+            mediaType = MediaType.VIDEO
+        )
+        val itemB = MediaItem(
+            id = 2L,
+            title = "Beta",
+            durationMs = 100_000L,
+            sizeBytes = 2_000L,
+            dateAdded = 30L,
+            dateModified = 10L,
+            mediaType = MediaType.AUDIO
+        )
+        val itemC = MediaItem(
+            id = 3L,
+            title = "gamma",
+            durationMs = 200_000L,
+            sizeBytes = 1_000L,
+            dateAdded = 20L,
+            dateModified = 20L,
+            mediaType = MediaType.VIDEO
+        )
+        val all = listOf(itemB, itemC, itemA)
+
+        // NAME ASC (case-insensitive)
+        assertEquals(
+            listOf(itemA, itemB, itemC),
+            repository.filterMedia(all, MediaFilter.ALL, sortOption = MediaSortOption.NAME, sortDirection = SortDirection.ASCENDING)
+        )
+        // SIZE DESC
+        assertEquals(
+            listOf(itemB, itemC, itemA),
+            repository.filterMedia(all, MediaFilter.ALL, sortOption = MediaSortOption.SIZE, sortDirection = SortDirection.DESCENDING)
+        )
+        // DURATION ASC
+        assertEquals(
+            listOf(itemB, itemC, itemA),
+            repository.filterMedia(all, MediaFilter.ALL, sortOption = MediaSortOption.DURATION, sortDirection = SortDirection.ASCENDING)
+        )
+        // DATE_ADDED DESC
+        assertEquals(
+            listOf(itemB, itemC, itemA),
+            repository.filterMedia(all, MediaFilter.ALL, sortOption = MediaSortOption.DATE_ADDED, sortDirection = SortDirection.DESCENDING)
+        )
+        // DATE_MODIFIED DESC
+        assertEquals(
+            listOf(itemA, itemC, itemB),
+            repository.filterMedia(all, MediaFilter.ALL, sortOption = MediaSortOption.DATE_MODIFIED, sortDirection = SortDirection.DESCENDING)
+        )
     }
 }

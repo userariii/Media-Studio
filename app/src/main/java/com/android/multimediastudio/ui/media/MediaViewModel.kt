@@ -8,6 +8,8 @@ import com.android.multimediastudio.data.datasource.DeleteResult
 import com.android.multimediastudio.data.model.AppThemeColor
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.MediaSortOption
+import com.android.multimediastudio.data.model.SortDirection
 import com.android.multimediastudio.data.model.ThemeMode
 import com.android.multimediastudio.data.repository.MediaRepository
 import com.android.multimediastudio.data.repository.UserPreferencesRepository
@@ -15,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -24,6 +27,8 @@ data class MediaUiState(
     val isPermissionChecked: Boolean = false,
     val selectedFilter: MediaFilter = MediaFilter.ALL,
     val searchQuery: String = "",
+    val sortOption: MediaSortOption = MediaSortOption.DATE_MODIFIED,
+    val sortDirection: SortDirection = SortDirection.DESCENDING,
     val isGridView: Boolean = false,
     val allMediaItems: List<MediaItem> = emptyList(),
     val filteredMediaItems: List<MediaItem> = emptyList(),
@@ -52,7 +57,9 @@ class MediaViewModel(
             themeMode = preferencesRepository?.getInitialThemeMode() ?: ThemeMode.SYSTEM,
             appThemeColor = preferencesRepository?.getInitialAppThemeColor() ?: AppThemeColor.DEFAULT,
             hideSocialMedia = preferencesRepository?.getInitialHideSocialMedia() ?: true,
-            pipEnabled = preferencesRepository?.getInitialPipEnabled() ?: true
+            pipEnabled = preferencesRepository?.getInitialPipEnabled() ?: true,
+            sortOption = preferencesRepository?.getInitialSortOption() ?: MediaSortOption.DATE_MODIFIED,
+            sortDirection = preferencesRepository?.getInitialSortDirection() ?: SortDirection.DESCENDING
         )
     )
     val uiState: StateFlow<MediaUiState> = _uiState.asStateFlow()
@@ -84,7 +91,9 @@ class MediaViewModel(
                             state.allMediaItems,
                             state.selectedFilter,
                             state.searchQuery,
-                            hide
+                            hide,
+                            state.sortOption,
+                            state.sortDirection
                         )
                         state.copy(
                             hideSocialMedia = hide,
@@ -93,15 +102,44 @@ class MediaViewModel(
                     }
                 }
             }
+            viewModelScope.launch {
+                combine(prefs.sortOptionStream, prefs.sortDirectionStream) { option, direction ->
+                    Pair(option, direction)
+                }.collect { (option, direction) ->
+                    _uiState.update { state ->
+                        if (state.sortOption == option && state.sortDirection == direction) {
+                            state
+                        } else {
+                            val newFiltered = repository.filterMedia(
+                                state.allMediaItems,
+                                state.selectedFilter,
+                                state.searchQuery,
+                                state.hideSocialMedia,
+                                option,
+                                direction
+                            )
+                            state.copy(
+                                sortOption = option,
+                                sortDirection = direction,
+                                filteredMediaItems = newFiltered
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         viewModelScope.launch {
             repository.mediaStream.collect { items ->
-                val currentFilter = _uiState.value.selectedFilter
-                val currentQuery = _uiState.value.searchQuery
-                val currentHide = _uiState.value.hideSocialMedia
                 _uiState.update { state ->
-                    val filtered = repository.filterMedia(items, currentFilter, currentQuery, currentHide)
+                    val filtered = repository.filterMedia(
+                        items,
+                        state.selectedFilter,
+                        state.searchQuery,
+                        state.hideSocialMedia,
+                        state.sortOption,
+                        state.sortDirection
+                    )
                     val validKeys = filtered.map { state.getItemKey(it) }.toSet()
                     state.copy(
                         allMediaItems = items,
@@ -153,7 +191,9 @@ class MediaViewModel(
                 state.allMediaItems,
                 filter,
                 state.searchQuery,
-                state.hideSocialMedia
+                state.hideSocialMedia,
+                state.sortOption,
+                state.sortDirection
             )
             state.copy(
                 selectedFilter = filter,
@@ -168,12 +208,53 @@ class MediaViewModel(
                 state.allMediaItems,
                 state.selectedFilter,
                 query,
-                state.hideSocialMedia
+                state.hideSocialMedia,
+                state.sortOption,
+                state.sortDirection
             )
             state.copy(
                 searchQuery = query,
                 filteredMediaItems = newFiltered
             )
+        }
+    }
+
+    fun setSortOption(option: MediaSortOption) {
+        val currentState = _uiState.value
+        val newDirection = if (currentState.sortOption == option) {
+            currentState.sortDirection.toggled()
+        } else {
+            option.defaultDirection()
+        }
+        applySort(option, newDirection)
+    }
+
+    fun setSortDirection(direction: SortDirection) {
+        val currentState = _uiState.value
+        if (currentState.sortDirection == direction) return
+        applySort(currentState.sortOption, direction)
+    }
+
+    private fun applySort(option: MediaSortOption, direction: SortDirection) {
+        _uiState.update { state ->
+            val newFiltered = repository.filterMedia(
+                state.allMediaItems,
+                state.selectedFilter,
+                state.searchQuery,
+                state.hideSocialMedia,
+                option,
+                direction
+            )
+            state.copy(
+                sortOption = option,
+                sortDirection = direction,
+                filteredMediaItems = newFiltered
+            )
+        }
+        preferencesRepository?.let { prefs ->
+            viewModelScope.launch {
+                prefs.setSortPreference(option, direction)
+            }
         }
     }
 
@@ -367,7 +448,9 @@ class MediaViewModel(
                 state.allMediaItems,
                 state.selectedFilter,
                 state.searchQuery,
-                hide
+                hide,
+                state.sortOption,
+                state.sortDirection
             )
             state.copy(
                 hideSocialMedia = hide,

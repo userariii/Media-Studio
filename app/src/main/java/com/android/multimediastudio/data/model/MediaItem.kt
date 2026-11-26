@@ -16,6 +16,26 @@ enum class MediaFilter {
     AUDIO
 }
 
+enum class MediaSortOption(val label: String, val shortLabel: String) {
+    DATE_MODIFIED("Date Modified", "Date"),
+    DATE_ADDED("Date Added", "Added"),
+    NAME("Name", "Name"),
+    SIZE("Size", "Size"),
+    DURATION("Duration", "Duration");
+
+    fun defaultDirection(): SortDirection = when (this) {
+        NAME -> SortDirection.ASCENDING
+        DATE_MODIFIED, DATE_ADDED, SIZE, DURATION -> SortDirection.DESCENDING
+    }
+}
+
+enum class SortDirection(val label: String) {
+    ASCENDING("Ascending"),
+    DESCENDING("Descending");
+
+    fun toggled(): SortDirection = if (this == ASCENDING) DESCENDING else ASCENDING
+}
+
 fun sanitizeArtist(artist: String?): String? {
     if (artist.isNullOrBlank()) return null
     val trimmed = artist.trim()

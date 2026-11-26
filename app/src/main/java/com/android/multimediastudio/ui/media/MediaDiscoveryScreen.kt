@@ -102,6 +102,10 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.VideoLibrary
 import com.android.multimediastudio.ui.settings.SettingsScreen
 import androidx.compose.material3.AlertDialog
@@ -110,8 +114,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -171,7 +178,9 @@ import coil.compose.AsyncImage
 import com.android.multimediastudio.MainActivity
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.MediaSortOption
 import com.android.multimediastudio.data.model.MediaType
+import com.android.multimediastudio.data.model.SortDirection
 import com.android.multimediastudio.util.AudioThumbnailData
 import com.android.multimediastudio.util.VideoThumbnailData
 import androidx.compose.animation.core.Animatable
@@ -876,6 +885,19 @@ fun MediaGalleryPane(
 
                 val gridState = rememberLazyGridState()
                 val listState = rememberLazyListState()
+                var lastAppliedSort by remember { mutableStateOf(Pair(uiState.sortOption, uiState.sortDirection)) }
+
+                LaunchedEffect(uiState.sortOption, uiState.sortDirection) {
+                    val currentSort = Pair(uiState.sortOption, uiState.sortDirection)
+                    if (lastAppliedSort != currentSort) {
+                        lastAppliedSort = currentSort
+                        if (uiState.isGridView) {
+                            gridState.scrollToItem(0)
+                        } else {
+                            listState.scrollToItem(0)
+                        }
+                    }
+                }
 
                 Box(
                     modifier = Modifier
@@ -931,6 +953,7 @@ fun MediaGalleryPane(
 
                         else -> {
                             val showMediaTypeChip = uiState.selectedFilter == MediaFilter.ALL
+                            var isSortMenuExpanded by remember { mutableStateOf(false) }
                             Column(modifier = Modifier.fillMaxSize()) {
                                 Row(
                                     modifier = Modifier
@@ -945,11 +968,134 @@ fun MediaGalleryPane(
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Text(
-                                        text = if (uiState.isGridView) "Grid View" else "List View",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Box {
+                                        Surface(
+                                                shape = MediaChipShape,
+                                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                modifier = Modifier
+                                                    .clip(MediaChipShape)
+                                                    .clickable { isSortMenuExpanded = true }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Rounded.Sort,
+                                                        contentDescription = "Sort options",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                    Text(
+                                                        text = uiState.sortOption.shortLabel,
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontWeight = FontWeight.SemiBold
+                                                        ),
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Icon(
+                                                        imageVector = if (uiState.sortDirection == SortDirection.ASCENDING)
+                                                            Icons.Rounded.ArrowUpward
+                                                        else
+                                                            Icons.Rounded.ArrowDownward,
+                                                        contentDescription = uiState.sortDirection.label,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            DropdownMenu(
+                                                expanded = isSortMenuExpanded,
+                                                onDismissRequest = { isSortMenuExpanded = false }
+                                            ) {
+                                                MediaSortOption.entries.forEach { option ->
+                                                    val isSelected = uiState.sortOption == option
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Text(
+                                                                text = option.label,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                color = if (isSelected)
+                                                                    MaterialTheme.colorScheme.primary
+                                                                else
+                                                                    MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                        },
+                                                        leadingIcon = if (isSelected) {
+                                                            {
+                                                                Icon(
+                                                                    imageVector = Icons.Rounded.Check,
+                                                                    contentDescription = null,
+                                                                    tint = MaterialTheme.colorScheme.primary,
+                                                                    modifier = Modifier.size(18.dp)
+                                                                )
+                                                            }
+                                                        } else null,
+                                                        trailingIcon = if (isSelected) {
+                                                            {
+                                                                Icon(
+                                                                    imageVector = if (uiState.sortDirection == SortDirection.ASCENDING)
+                                                                        Icons.Rounded.ArrowUpward
+                                                                    else
+                                                                        Icons.Rounded.ArrowDownward,
+                                                                    contentDescription = uiState.sortDirection.label,
+                                                                    tint = MaterialTheme.colorScheme.primary,
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
+                                                            }
+                                                        } else null,
+                                                        onClick = {
+                                                            viewModel.setSortOption(option)
+                                                        }
+                                                    )
+                                                }
+                                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                                SortDirection.entries.forEach { direction ->
+                                                    val isSelected = uiState.sortDirection == direction
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Text(
+                                                                text = direction.label,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                color = if (isSelected)
+                                                                    MaterialTheme.colorScheme.primary
+                                                                else
+                                                                    MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                        },
+                                                        leadingIcon = {
+                                                            Icon(
+                                                                imageVector = if (direction == SortDirection.ASCENDING)
+                                                                    Icons.Rounded.ArrowUpward
+                                                                else
+                                                                    Icons.Rounded.ArrowDownward,
+                                                                contentDescription = null,
+                                                                tint = if (isSelected)
+                                                                    MaterialTheme.colorScheme.primary
+                                                                else
+                                                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
+                                                        },
+                                                        trailingIcon = if (isSelected) {
+                                                            {
+                                                                Icon(
+                                                                    imageVector = Icons.Rounded.Check,
+                                                                    contentDescription = null,
+                                                                    tint = MaterialTheme.colorScheme.primary,
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
+                                                            }
+                                                        } else null,
+                                                        onClick = {
+                                                            viewModel.setSortDirection(direction)
+                                                        }
+                                                    )
+                                            }
+                                        }
+                                    }
                                 }
 
                                 val currentOnItemClick by rememberUpdatedState(onItemClick)

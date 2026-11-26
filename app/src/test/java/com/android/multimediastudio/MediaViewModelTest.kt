@@ -4,7 +4,9 @@ import com.android.multimediastudio.data.datasource.DeleteResult
 import com.android.multimediastudio.data.datasource.MediaChangeEvent
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.MediaSortOption
 import com.android.multimediastudio.data.model.MediaType
+import com.android.multimediastudio.data.model.SortDirection
 import com.android.multimediastudio.data.repository.MediaRepository
 import com.android.multimediastudio.ui.media.MediaViewModel
 import kotlinx.coroutines.Dispatchers
@@ -94,16 +96,30 @@ class FakeMediaRepository : MediaRepository {
         items: List<MediaItem>,
         filter: MediaFilter,
         searchQuery: String,
-        hideSocialMedia: Boolean
+        hideSocialMedia: Boolean,
+        sortOption: MediaSortOption,
+        sortDirection: SortDirection
     ): List<MediaItem> {
         val typeFiltered = when (filter) {
             MediaFilter.ALL -> items
             MediaFilter.VIDEO -> items.filter { it.mediaType == MediaType.VIDEO }
             MediaFilter.AUDIO -> items.filter { it.mediaType == MediaType.AUDIO }
         }
-        if (searchQuery.isBlank()) return typeFiltered
-        val q = searchQuery.lowercase()
-        return typeFiltered.filter { it.title.lowercase().contains(q) }
+        val queryFiltered = if (searchQuery.isBlank()) {
+            typeFiltered
+        } else {
+            val q = searchQuery.lowercase()
+            typeFiltered.filter { it.title.lowercase().contains(q) }
+        }
+        val comparator = when (sortOption) {
+            MediaSortOption.DATE_MODIFIED -> compareBy<MediaItem> { it.dateModified }
+            MediaSortOption.DATE_ADDED -> compareBy<MediaItem> { it.dateAdded }
+            MediaSortOption.NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+            MediaSortOption.SIZE -> compareBy<MediaItem> { it.sizeBytes }
+            MediaSortOption.DURATION -> compareBy<MediaItem> { it.durationMs }
+        }
+        val finalComp = if (sortDirection == SortDirection.DESCENDING) comparator.reversed() else comparator
+        return queryFiltered.sortedWith(finalComp)
     }
 
     override suspend fun deleteMediaFiles(items: List<MediaItem>): DeleteResult {
@@ -314,5 +330,32 @@ class MediaViewModelTest {
         viewModel.setPipEnabled(true)
 
         assertTrue(viewModel.uiState.value.pipEnabled)
+    }
+
+    @Test
+    fun sortOption_reordersItemsAndTogglesDirectionWhenReselected() = runTest {
+        viewModel.onPermissionChanged(true)
+        testDispatcher.scheduler.runCurrent()
+
+        // Default is DATE_MODIFIED DESC -> audioItem (25L) then videoItem (20L)
+        assertEquals(MediaSortOption.DATE_MODIFIED, viewModel.uiState.value.sortOption)
+        assertEquals(SortDirection.DESCENDING, viewModel.uiState.value.sortDirection)
+        assertEquals(listOf(fakeRepository.audioItem, fakeRepository.videoItem), viewModel.uiState.value.filteredMediaItems)
+
+        // Selecting NAME defaults to ASCENDING -> Acoustic Audio then Video Clip 1
+        viewModel.setSortOption(MediaSortOption.NAME)
+        assertEquals(MediaSortOption.NAME, viewModel.uiState.value.sortOption)
+        assertEquals(SortDirection.ASCENDING, viewModel.uiState.value.sortDirection)
+        assertEquals(listOf(fakeRepository.audioItem, fakeRepository.videoItem), viewModel.uiState.value.filteredMediaItems)
+
+        // Re-selecting NAME toggles to DESCENDING -> Video Clip 1 then Acoustic Audio
+        viewModel.setSortOption(MediaSortOption.NAME)
+        assertEquals(SortDirection.DESCENDING, viewModel.uiState.value.sortDirection)
+        assertEquals(listOf(fakeRepository.videoItem, fakeRepository.audioItem), viewModel.uiState.value.filteredMediaItems)
+
+        // Setting direction explicitly works
+        viewModel.setSortDirection(SortDirection.ASCENDING)
+        assertEquals(SortDirection.ASCENDING, viewModel.uiState.value.sortDirection)
+        assertEquals(listOf(fakeRepository.audioItem, fakeRepository.videoItem), viewModel.uiState.value.filteredMediaItems)
     }
 }

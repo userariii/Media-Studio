@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.android.multimediastudio.data.model.AppThemeColor
+import com.android.multimediastudio.data.model.MediaSortOption
+import com.android.multimediastudio.data.model.SortDirection
 import com.android.multimediastudio.data.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -19,6 +21,8 @@ class UserPreferencesRepository(private val context: Context) {
     private val appThemeColorKey = stringPreferencesKey("app_theme_color")
     private val hideSocialMediaKey = booleanPreferencesKey("hide_social_media")
     private val pipEnabledKey = booleanPreferencesKey("pip_enabled")
+    private val sortOptionKey = stringPreferencesKey("sort_option")
+    private val sortDirectionKey = stringPreferencesKey("sort_direction")
 
     private val syncPrefs by lazy {
         context.applicationContext.getSharedPreferences("user_preferences_sync", Context.MODE_PRIVATE)
@@ -50,6 +54,24 @@ class UserPreferencesRepository(private val context: Context) {
         return syncPrefs.getBoolean("pip_enabled", true)
     }
 
+    fun getInitialSortOption(): MediaSortOption {
+        val sortStr = syncPrefs.getString("sort_option", null) ?: return MediaSortOption.DATE_MODIFIED
+        return try {
+            MediaSortOption.valueOf(sortStr)
+        } catch (_: Exception) {
+            MediaSortOption.DATE_MODIFIED
+        }
+    }
+
+    fun getInitialSortDirection(): SortDirection {
+        val dirStr = syncPrefs.getString("sort_direction", null) ?: return SortDirection.DESCENDING
+        return try {
+            SortDirection.valueOf(dirStr)
+        } catch (_: Exception) {
+            SortDirection.DESCENDING
+        }
+    }
+
     val themeModeStream: Flow<ThemeMode> = dataStore.data.map { prefs ->
         val modeStr = prefs[themeModeKey] ?: syncPrefs.getString("theme_mode", null) ?: ThemeMode.SYSTEM.name
         try {
@@ -74,6 +96,24 @@ class UserPreferencesRepository(private val context: Context) {
 
     val pipEnabledStream: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[pipEnabledKey] ?: syncPrefs.getBoolean("pip_enabled", true)
+    }
+
+    val sortOptionStream: Flow<MediaSortOption> = dataStore.data.map { prefs ->
+        val sortStr = prefs[sortOptionKey] ?: syncPrefs.getString("sort_option", null) ?: MediaSortOption.DATE_MODIFIED.name
+        try {
+            MediaSortOption.valueOf(sortStr)
+        } catch (_: Exception) {
+            MediaSortOption.DATE_MODIFIED
+        }
+    }
+
+    val sortDirectionStream: Flow<SortDirection> = dataStore.data.map { prefs ->
+        val dirStr = prefs[sortDirectionKey] ?: syncPrefs.getString("sort_direction", null) ?: SortDirection.DESCENDING.name
+        try {
+            SortDirection.valueOf(dirStr)
+        } catch (_: Exception) {
+            SortDirection.DESCENDING
+        }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {
@@ -101,6 +141,17 @@ class UserPreferencesRepository(private val context: Context) {
         syncPrefs.edit().putBoolean("pip_enabled", enabled).apply()
         dataStore.edit { prefs ->
             prefs[pipEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setSortPreference(option: MediaSortOption, direction: SortDirection) {
+        syncPrefs.edit()
+            .putString("sort_option", option.name)
+            .putString("sort_direction", direction.name)
+            .apply()
+        dataStore.edit { prefs ->
+            prefs[sortOptionKey] = option.name
+            prefs[sortDirectionKey] = direction.name
         }
     }
 }

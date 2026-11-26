@@ -6,7 +6,9 @@ import com.android.multimediastudio.data.datasource.MediaStoreDataSource
 import com.android.multimediastudio.data.datasource.mergeMediaChangeEvents
 import com.android.multimediastudio.data.model.MediaFilter
 import com.android.multimediastudio.data.model.MediaItem
+import com.android.multimediastudio.data.model.MediaSortOption
 import com.android.multimediastudio.data.model.MediaType
+import com.android.multimediastudio.data.model.SortDirection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +32,9 @@ interface MediaRepository {
         items: List<MediaItem>,
         filter: MediaFilter,
         searchQuery: String = "",
-        hideSocialMedia: Boolean = false
+        hideSocialMedia: Boolean = false,
+        sortOption: MediaSortOption = MediaSortOption.DATE_MODIFIED,
+        sortDirection: SortDirection = SortDirection.DESCENDING
     ): List<MediaItem>
     suspend fun deleteMediaFiles(items: List<MediaItem>): DeleteResult
 }
@@ -103,7 +107,9 @@ class MediaRepositoryImpl(
         items: List<MediaItem>,
         filter: MediaFilter,
         searchQuery: String,
-        hideSocialMedia: Boolean
+        hideSocialMedia: Boolean,
+        sortOption: MediaSortOption,
+        sortDirection: SortDirection
     ): List<MediaItem> {
         val socialFiltered = if (hideSocialMedia) {
             items.filter { !it.isSocialMedia() }
@@ -115,15 +121,55 @@ class MediaRepositoryImpl(
             MediaFilter.VIDEO -> socialFiltered.filter { it.mediaType == MediaType.VIDEO }
             MediaFilter.AUDIO -> socialFiltered.filter { it.mediaType == MediaType.AUDIO }
         }
-        if (searchQuery.isBlank()) return typeFiltered
-        val query = searchQuery.trim().lowercase()
-        return typeFiltered.filter { item ->
-            item.title.lowercase().contains(query) ||
-            (item.artist?.lowercase()?.contains(query) == true) ||
-            (item.album?.lowercase()?.contains(query) == true) ||
-            (item.resolution?.lowercase()?.contains(query) == true) ||
-            item.mimeType.lowercase().contains(query)
+        val searchFiltered = if (searchQuery.isBlank()) {
+            typeFiltered
+        } else {
+            val query = searchQuery.trim().lowercase()
+            typeFiltered.filter { item ->
+                item.title.lowercase().contains(query) ||
+                (item.artist?.lowercase()?.contains(query) == true) ||
+                (item.album?.lowercase()?.contains(query) == true) ||
+                (item.resolution?.lowercase()?.contains(query) == true) ||
+                item.mimeType.lowercase().contains(query)
+            }
         }
+        return sortMediaItems(searchFiltered, sortOption, sortDirection)
+    }
+
+    private fun sortMediaItems(
+        items: List<MediaItem>,
+        sortOption: MediaSortOption,
+        sortDirection: SortDirection
+    ): List<MediaItem> {
+        if (items.size <= 1) return items
+        val comparator = when (sortOption) {
+            MediaSortOption.DATE_MODIFIED -> Comparator<MediaItem> { a, b ->
+                val cmp = a.dateModified.compareTo(b.dateModified)
+                if (cmp != 0) cmp else a.title.compareTo(b.title, ignoreCase = true)
+            }
+            MediaSortOption.DATE_ADDED -> Comparator<MediaItem> { a, b ->
+                val cmp = a.dateAdded.compareTo(b.dateAdded)
+                if (cmp != 0) cmp else a.title.compareTo(b.title, ignoreCase = true)
+            }
+            MediaSortOption.NAME -> Comparator<MediaItem> { a, b ->
+                val cmp = a.title.compareTo(b.title, ignoreCase = true)
+                if (cmp != 0) cmp else a.id.compareTo(b.id)
+            }
+            MediaSortOption.SIZE -> Comparator<MediaItem> { a, b ->
+                val cmp = a.sizeBytes.compareTo(b.sizeBytes)
+                if (cmp != 0) cmp else a.title.compareTo(b.title, ignoreCase = true)
+            }
+            MediaSortOption.DURATION -> Comparator<MediaItem> { a, b ->
+                val cmp = a.durationMs.compareTo(b.durationMs)
+                if (cmp != 0) cmp else a.title.compareTo(b.title, ignoreCase = true)
+            }
+        }
+        val finalComparator = if (sortDirection == SortDirection.DESCENDING) {
+            comparator.reversed()
+        } else {
+            comparator
+        }
+        return items.sortedWith(finalComparator)
     }
 
     override suspend fun deleteMediaFiles(items: List<MediaItem>): DeleteResult {
